@@ -1,0 +1,8 @@
+/AGENTS.md
+/SPEC.md
+/HANDOFF.md
+/.agent-local/
+/history.local.json
+/changes.local.json
+/.env
+/.env.*
