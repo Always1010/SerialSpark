@@ -6,3 +6,8 @@
 /changes.local.json
 /.env
 /.env.*
+/build/
+/build-*/
+*.ssr
+*.ssr-wal
+*.ssr-shm
