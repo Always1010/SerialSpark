@@ -15,7 +15,10 @@ int main() {
         if(seen!=20||info["segments"].size()<2||info["complete"]!=true) throw std::runtime_error("rotation metadata");
         bool exists=false;try{ss::Recorder duplicate(path,ss::Json::object());}catch(const ss::Error&){exists=true;}if(!exists)throw std::runtime_error("overwrote log");
         ss::Recorder bounded(dir/"bounded.ssr",ss::Json::object(),65536,0,512);
-        bool limited=false;try{bounded.append({1,1,1,"data","rx",ss::Bytes(1024),ss::Json::object()});}catch(const ss::Error&){limited=true;}bounded.close();if(!limited)throw std::runtime_error("unbounded queue");
+        bool limited=false;try{bounded.append({1,1,1,"data","rx",ss::Bytes(1024),ss::Json::object()});}catch(const ss::Error&){limited=true;}
+        bool latched=false;try{bounded.append({2,1,1,"data","rx",{1},ss::Json::object()});}catch(const ss::Error&){latched=true;}
+        try{bounded.close();}catch(const ss::Error&){}
+        if(!limited||!latched||ss::log_info(dir/"bounded.ssr")["complete"]!=false)throw std::runtime_error("overflow not terminal/incomplete");
         ss::Recorder quota(dir/"quota.ssr",ss::Json::object(),65536,1000);
         quota.append({1,1,1,"data","rx",{1},ss::Json::object()});
         bool exceeded=false;try{quota.close();}catch(const ss::Error&){exceeded=true;}if(!exceeded)throw std::runtime_error("quota ignored");
