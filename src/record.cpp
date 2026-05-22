@@ -41,11 +41,12 @@ Json metadata(sqlite3* db) {
     while((rc=sqlite3_step(raw))==SQLITE_ROW) {
         auto key=reinterpret_cast<const char*>(sqlite3_column_text(raw,0));
         auto value=reinterpret_cast<const char*>(sqlite3_column_text(raw,1));
+        if(!key||!value) throw Error(Exit::record,"记录元数据含空值");
         if(sqlite3_column_bytes(raw,1)>1024*1024) throw Error(Exit::record,"记录元数据超过上限");
-        j[key]=Json::parse(value);
+        try {j[key]=Json::parse(value);}catch(const Json::exception&){throw Error(Exit::record,"记录元数据 JSON 损坏");}
     }
     if(rc!=SQLITE_DONE) throw Error(Exit::record,sqlite3_errmsg(db));
-    if(j.value("schema_version",0)!=1) throw Error(Exit::record,"记录格式版本不支持");
+    if(!j.contains("schema_version")||!j["schema_version"].is_number_integer()||j["schema_version"]!=1) throw Error(Exit::record,"记录格式版本不支持");
     return j;
 }
 template<class F> void segments(const std::filesystem::path& first,F&& callback) {
@@ -86,7 +87,10 @@ void Recorder::append(const RawEvent& event) {
     if(!error_.empty()) throw Error(Exit::record,error_+"；最后持久化事件="+std::to_string(persisted_.load()));
     if(stopping_) throw Error(Exit::record,"记录已关闭");
     auto size=event.bytes.size()+event.detail.dump().size()+256;
-    if(size>queue_limit_||queued_bytes_>queue_limit_-size) throw Error(Exit::record,"记录队列达到上限，停止采集；最后持久化事件="+std::to_string(persisted_.load()));
+    if(size>queue_limit_||queued_bytes_>queue_limit_-size) {
+        error_="记录队列达到上限，停止采集";stopping_=true;cv_.notify_one();
+        throw Error(Exit::record,error_+"；最后持久化事件="+std::to_string(persisted_.load()));
+    }
     queue_.push_back(event);queued_bytes_+=size;cv_.notify_one();
 }
 void Recorder::check() {
@@ -138,7 +142,9 @@ void Recorder::work() {
             if(mono_ns()>=deadline||batch_bytes>=256*1024||(!has&&stop)) {commit();batch_bytes=0;deadline=mono_ns()+100000000;}
             if(!has&&stop) break;
         }
-        finish_segment(true);
+        bool clean;
+        {std::lock_guard lock(mutex_);clean=error_.empty();}
+        finish_segment(clean);
     } catch(const std::exception& e) {
         {std::lock_guard lock(mutex_);error_="记录失败: "+std::string(e.what());stopping_=true;queue_.clear();queued_bytes_=0;}
         if(db_) {
@@ -165,7 +171,7 @@ void read_log(const std::filesystem::path& path,const std::function<void(const R
             int bytes=sqlite3_column_bytes(raw,5);
             if(bytes>65536||sqlite3_column_bytes(raw,6)>1024*1024) throw Error(Exit::record,"记录事件超过安全读取上限");
             auto p=static_cast<const std::uint8_t*>(sqlite3_column_blob(raw,5));if(bytes)e.bytes.assign(p,p+bytes);
-            e.detail=Json::parse(text(6));
+            try {e.detail=Json::parse(text(6));}catch(const Json::exception&){throw Error(Exit::record,"记录事件 JSON 损坏");}
             if(e.seq!=previous+1) throw Error(Exit::record,"记录事件序号存在缺口或重复");
             previous=e.seq;
             visit(e);
