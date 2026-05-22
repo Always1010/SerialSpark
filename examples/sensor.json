@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "framing": {
+    "mode": "header_fixed",
+    "header_hex": "AA 55",
+    "length": 9,
+    "min_frame_bytes": 9,
+    "max_frame_bytes": 9,
+    "assembly_timeout_ms": 200
+  },
+  "emit_raw_fields": true,
+  "fields": [
+    {"name": "device", "type": "u8", "offset": 2},
+    {"name": "temperature", "type": "i16", "offset": 3, "endian": "little", "scale": 0.1, "unit": "°C"},
+    {"name": "humidity", "type": "u16", "offset": 5, "endian": "little", "scale": 0.1, "unit": "%"}
+  ],
+  "checksum": {
+    "algorithm": "crc16-modbus",
+    "coverage": {"start": 0, "end_from_end": 2},
+    "offset_from_end": 2,
+    "result_endian": "little"
+  }
+}

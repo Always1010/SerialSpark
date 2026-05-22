@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "framing": {
+    "mode": "newline",
+    "newline": "CRLF",
+    "include_delimiter": false,
+    "max_frame_bytes": 1024,
+    "assembly_timeout_ms": 1000
+  },
+  "split_separator": ",",
+  "emit_raw_fields": true,
+  "fields": [
+    {"name": "device", "type": "u32", "index": 0},
+    {"name": "temperature", "type": "float64", "index": 1, "unit": "°C"},
+    {"name": "state", "type": "u8", "index": 2, "enum": {"0": "idle", "1": "active"}}
+  ]
+}
