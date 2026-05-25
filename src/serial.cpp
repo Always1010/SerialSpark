@@ -15,8 +15,22 @@ Json SerialConfig::json() const {return {{"port",port},{"baud",baud},{"data_bits
 SerialConfig SerialConfig::from_json(const Json& j) {
     if(!j.is_object()) throw Error(Exit::usage,"通信配置必须是对象");
     for(auto it=j.begin();it!=j.end();++it) if(it.key()!="port"&&it.key()!="baud"&&it.key()!="data_bits"&&it.key()!="parity"&&it.key()!="stop_bits"&&it.key()!="flow") throw Error(Exit::usage,"未知通信参数: "+it.key());
+    auto integer=[&](const char* key,int fallback,int low,int high) {
+        if(!j.contains(key)) return fallback;
+        const auto& v=j[key];
+        if(!v.is_number_integer()) throw Error(Exit::usage,std::string(key)+" 必须为整数");
+        if(v.is_number_unsigned()) {
+            auto n=v.get<std::uint64_t>();if(n<static_cast<unsigned>(low)||n>static_cast<unsigned>(high))throw Error(Exit::usage,std::string(key)+" 超出支持范围");return static_cast<int>(n);
+        }
+        auto n=v.get<std::int64_t>();if(n<low||n>high)throw Error(Exit::usage,std::string(key)+" 超出支持范围");return static_cast<int>(n);
+    };
+    auto string=[&](const char* key,const std::string& fallback) {
+        if(!j.contains(key))return fallback;
+        if(!j[key].is_string())throw Error(Exit::usage,std::string(key)+" 必须为字符串");
+        return j[key].get<std::string>();
+    };
     SerialConfig c;
-    c.port=j.value("port",c.port);c.baud=j.value("baud",c.baud);c.data_bits=j.value("data_bits",c.data_bits);c.parity=j.value("parity",c.parity);c.stop_bits=j.value("stop_bits",c.stop_bits);c.flow=j.value("flow",c.flow);c.validate(false);return c;
+    c.port=string("port",c.port);c.baud=integer("baud",c.baud,1,4000000);c.data_bits=integer("data_bits",c.data_bits,5,8);c.parity=string("parity",c.parity);c.stop_bits=integer("stop_bits",c.stop_bits,1,2);c.flow=string("flow",c.flow);c.validate(false);return c;
 }
 void SerialConfig::validate(bool require_port) const {
     if(require_port&&port.empty()) throw Error(Exit::usage,"请指定 --port 或保存的 --profile");
