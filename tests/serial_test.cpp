@@ -19,6 +19,10 @@ int main() {
         int competing=open(path,O_RDWR|O_NOCTTY);if(competing>=0){close(competing);throw std::runtime_error("exclusive open not enforced");}
         c.baud=123456;c.flow="bad";
         bool failed=false;try{c.validate();}catch(const ss::Error&){failed=true;}if(!failed) throw std::runtime_error("invalid flow");
+        for(const auto& bad:{ss::Json{{"baud",4294967297ull}},ss::Json{{"data_bits",8.9}},ss::Json{{"baud",-1}},ss::Json{{"stop_bits",true}}}) {
+            bool rejected=false;try{ss::SerialConfig::from_json(bad);}catch(const ss::Error&){rejected=true;}
+            if(!rejected)throw std::runtime_error("configuration numeric narrowing");
+        }
         port.close();c.flow="none";ss::SerialPort custom(c);
         if(custom.actual().at("baud")!=123456) throw std::runtime_error("custom baud readback");
         close(master);master=-1;
