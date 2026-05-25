@@ -1,6 +1,7 @@
 #include "serialspark/session.hpp"
 #include "serialspark/protocol.hpp"
 #include "serialspark/record.hpp"
+#include "serialspark/commands.hpp"
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <fstream>
@@ -125,8 +126,9 @@ int main(int argc,char** argv) {
     auto send=app.add_subcommand("send","单次发送文本/十六进制/文件/管道；成功表示驱动接受，回复另行确认");send_args.attach(send,"send");send->callback([&]{result=send_args.run();});
     auto session=app.add_subcommand("session","交互收发；普通行发送文本，:send hex/file，:status，:connect，:disconnect，:quit");session_args.attach(session,"session");session->callback([&]{result=session_args.run();});
     auto capture=app.add_subcommand("capture","只接收、显示与记录；Ctrl+C 停止");capture_args.attach(capture,"capture");capture->callback([&]{result=capture_args.run();});
+    add_analysis_commands(app,result);
     try {app.parse(argc,argv);return result;}
-    catch(const CLI::ParseError& e){return app.exit(e);}
+    catch(const CLI::ParseError& e){app.exit(e);return e.get_exit_code()==0?0:static_cast<int>(Exit::usage);}
     catch(const Error& e){std::cerr<<e.what()<<'\n';return static_cast<int>(e.code);}
     catch(const Json::exception& e){std::cerr<<"配置或数据格式错误: "<<e.what()<<'\n';return static_cast<int>(Exit::usage);}
     catch(const std::exception& e){std::cerr<<"操作失败: "<<e.what()<<'\n';return static_cast<int>(Exit::io);}
