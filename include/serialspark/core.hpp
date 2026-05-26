@@ -22,7 +22,7 @@ std::string escaped(std::span<const std::uint8_t> bytes);
 std::int64_t wall_ns();
 std::int64_t mono_ns();
 Json read_json(const std::filesystem::path& path);
-void write_json(const std::filesystem::path& path, const Json& json);
+void write_json(const std::filesystem::path& path, const Json& json, bool replace=false);
 struct RawEvent {
     std::int64_t seq=0;
     std::int64_t wall=0;
