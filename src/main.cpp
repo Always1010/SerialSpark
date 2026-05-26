@@ -25,7 +25,7 @@ std::filesystem::path named_path(const std::string& category,const std::string& 
 void save_named(const std::string& category,const std::string& name,const Json& j,bool replace) {
     auto path=named_path(category,name);std::filesystem::create_directories(path.parent_path());
     if(!replace&&std::filesystem::exists(path))throw Error(Exit::usage,"名称已存在；明确使用 --replace 才能覆盖");
-    write_json(path,j);
+    write_json(path,j,replace);
 }
 Json profile_config(const Json& j) {
     if(!j.is_object()||j.value("schema_version",0)!=1||!j.contains("config"))throw Error(Exit::usage,"通信配置应为 schema_version:1 和 config 对象");

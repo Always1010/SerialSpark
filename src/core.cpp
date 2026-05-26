@@ -2,6 +2,10 @@
 #include <chrono>
 #include <fstream>
 #include <cctype>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
 
 namespace ss {
 Bytes unhex(const std::string& text) {
@@ -54,10 +58,26 @@ Json read_json(const std::filesystem::path& path) {
     in.seekg(0);
     try {Json j;in>>j;return j;} catch(const Json::exception& e) {throw Error(Exit::usage,"JSON 配置错误: "+std::string(e.what()));}
 }
-void write_json(const std::filesystem::path& path,const Json& j) {
-    auto tmp=path;tmp+=".tmp";
-    {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);if(!out) throw Error(Exit::io,"无法写入: "+tmp.string());out<<j.dump(2)<<'\n';out.flush();if(!out) throw Error(Exit::io,"配置写入失败");}
-    std::filesystem::rename(tmp,path);
+void write_json(const std::filesystem::path& path,const Json& j,bool replace) {
+    auto contents=j.dump(2)+"\n";
+    if(contents.size()>1024*1024) throw Error(Exit::usage,"配置文件超过 1 MiB 上限");
+    auto pattern=path.string()+".tmp.XXXXXX";std::vector<char> name(pattern.begin(),pattern.end());name.push_back(0);
+    int fd=mkstemp(name.data());if(fd<0)throw Error(Exit::io,"无法创建配置临时文件: "+std::string(strerror(errno)));
+    struct Cleanup {int fd;std::string path;~Cleanup(){if(fd>=0)::close(fd);::unlink(path.c_str());}} cleanup{fd,name.data()};
+    std::size_t offset=0;
+    while(offset<contents.size()) {
+        auto n=::write(fd,contents.data()+offset,contents.size()-offset);
+        if(n<0&&errno==EINTR)continue;
+        if(n<=0)throw Error(Exit::io,"配置写入失败: "+std::string(strerror(errno)));
+        offset+=n;
+    }
+    if(fsync(fd)<0)throw Error(Exit::io,"配置同步失败");
+    int rc=replace ? ::rename(cleanup.path.c_str(),path.c_str()) : ::link(cleanup.path.c_str(),path.c_str());
+    if(rc<0)throw Error(errno==EEXIST?Exit::usage:Exit::io,"无法发布配置（默认不覆盖已有文件）: "+std::string(strerror(errno)));
+    auto parent=path.parent_path();if(parent.empty())parent=".";
+    int directory=::open(parent.c_str(),O_RDONLY|O_DIRECTORY|O_CLOEXEC);
+    if(directory<0)throw Error(Exit::io,"配置已发布，但无法打开目录进行同步");
+    rc=fsync(directory);::close(directory);if(rc<0)throw Error(Exit::io,"配置已发布，但目录同步失败");
 }
 Json event_json(const RawEvent& e) {return {{"schema_version",1},{"kind",e.kind},{"seq",e.seq},{"wall_ns",e.wall},{"mono_ns",e.mono},{"direction",e.direction},{"raw_hex",hex(e.bytes)},{"byte_count",e.bytes.size()},{"detail",e.detail}};}
 RawEvent event_from_json(const Json& j) {return {j.at("seq"),j.at("wall_ns"),j.at("mono_ns"),j.at("kind"),j.at("direction"),unhex(j.at("raw_hex")),j.at("detail")};}
