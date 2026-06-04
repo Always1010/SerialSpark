@@ -99,6 +99,14 @@ with tempfile.TemporaryDirectory() as directory:
     bad = root / "bad.json"
     bad.write_text('{"schema_version":1,"framing":{"mode":"fixed","length":4,"typo":1}}')
     run("protocol", "validate", bad, expected=2)
+    empty = root / "empty.ssr"
+    db = sqlite3.connect(empty)
+    db.executescript("create table metadata(key text primary key,value text); create table events(seq integer primary key,wall_ns integer,mono_ns integer,kind text,direction text,bytes blob,detail text);")
+    db.executemany("insert into metadata values(?,?)", [(key, json.dumps(value)) for key, value in {"schema_version": 1, "session": {}, "segment": 0, "clean_shutdown": True, "persisted_seq": 1}.items()])
+    db.execute("insert into events values(1,0,0,'data','rx',?, '{}')", (b"",))
+    db.commit()
+    db.close()
+    assert run("log", "export", empty, "--format", "bin", "--direction", "rx") == b""
     # Damaged external records fail with the record error code, not a config error.
     db = sqlite3.connect(log)
     db.execute("update metadata set value='not json' where key='session'")
