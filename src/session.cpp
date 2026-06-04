@@ -65,7 +65,10 @@ void Output::finish() {
         pollfd p{fd_,POLLOUT,0};poll(&p,1,50);
     }
 }
-void Output::raw(std::span<const std::uint8_t> bytes) {enqueue(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));}
+void Output::raw(std::span<const std::uint8_t> bytes) {
+    if(bytes.empty())return;
+    enqueue(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));
+}
 void Output::emit(const Json& j) {
     if(format_=="json"||format_=="jsonl") {enqueue(j.dump()+"\n");return;}
     std::ostringstream out;
