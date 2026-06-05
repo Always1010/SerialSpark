@@ -32,6 +32,7 @@ private:
     std::size_t part_=0,queue_limit_,queued_bytes_=0;
     std::atomic<std::int64_t> persisted_{0};
     std::int64_t pending_=0;
+    std::int64_t last_appended_=0;
     bool transaction_=false;
     std::mutex mutex_;
     std::condition_variable cv_;
