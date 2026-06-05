@@ -79,6 +79,14 @@ with tempfile.TemporaryDirectory() as directory:
     new_protocol.write_text(json.dumps(modified))
     reinterpreted = frames(run("log", "parse", log, "--protocol", new_protocol, "--where", "temperature >= 47", "--format", "jsonl"))
     assert [f["fields"]["temperature"] for f in reinterpreted] == [47, 50]
+    modified["fields"][1]["name"] = "温度"
+    new_protocol.write_text(json.dumps(modified))
+    chinese = frames(run("log", "parse", log, "--protocol", new_protocol, "--where", "温度 > 49", "--format", "jsonl"))
+    assert len(chinese) == 1 and chinese[0]["fields"]["温度"] == 50
+    modified["fields"][1]["name"] = "温 度>"
+    new_protocol.write_text(json.dumps(modified))
+    quoted = frames(run("log", "parse", log, "--protocol", new_protocol, "--where", '"温 度>" == 47', "--format", "jsonl"))
+    assert len(quoted) == 1 and quoted[0]["fields"]["温 度>"] == 47
     assert {p: hashlib.sha256(p.read_bytes()).digest() for p in root.glob("*.ssr")} == original
 
     # Every parsed byte remains attributable to stored raw data.
