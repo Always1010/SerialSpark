@@ -3,7 +3,6 @@
 #include "serialspark/record.hpp"
 #include "serialspark/session.hpp"
 #include <fstream>
-#include <regex>
 #include <set>
 
 namespace ss {
@@ -28,10 +27,21 @@ struct Filter {
         if(!where.empty()) {
             if(!parsed)throw Error(Exit::usage,"--where 必须配合 --protocol 解析后使用");
             if(where.size()>4096)throw Error(Exit::usage,"字段筛选表达式超过上限");
-            std::smatch match;std::regex expression(R"(^([A-Za-z_][A-Za-z0-9_.-]*)\s*(==|!=|>=|<=|>|<)\s*(.+)$)");
-            if(!std::regex_match(where,match,expression))throw Error(Exit::usage,"字段筛选格式: 字段名 比较符 JSON值");
-            field=match[1];op=match[2];
-            try{expected=Json::parse(match[3].str());}catch(const Json::exception&){throw Error(Exit::usage,"字段比较值必须是 JSON 数字、字符串或布尔值");}
+            auto trim=[](std::string s){auto first=s.find_first_not_of(" \t\r\n");if(first==std::string::npos)return std::string{};auto last=s.find_last_not_of(" \t\r\n");return s.substr(first,last-first+1);};
+            auto expression=trim(where);std::string remainder;
+            if(!expression.empty()&&expression.front()=='"') {
+                bool escape=false;std::size_t end=1;
+                for(;end<expression.size();++end){char ch=expression[end];if(escape)escape=false;else if(ch=='\\')escape=true;else if(ch=='"')break;}
+                if(end==expression.size())throw Error(Exit::usage,"字段名的 JSON 引号不完整");
+                try{field=Json::parse(expression.substr(0,end+1)).get<std::string>();}catch(const Json::exception&){throw Error(Exit::usage,"字段名 JSON 字符串错误");}
+                remainder=trim(expression.substr(end+1));
+            } else {
+                auto end=expression.find_first_of("=!<>");if(end==std::string::npos)throw Error(Exit::usage,"字段筛选缺少比较符");
+                field=trim(expression.substr(0,end));remainder=trim(expression.substr(end));
+            }
+            for(auto candidate:{"==","!=",">=","<=",">","<"})if(remainder.starts_with(candidate)){op=candidate;break;}
+            if(field.empty()||op.empty())throw Error(Exit::usage,"字段筛选格式: 字段名 比较符 JSON值");
+            try{expected=Json::parse(trim(remainder.substr(op.size())));}catch(const Json::exception&){throw Error(Exit::usage,"字段比较值必须是 JSON 数字、字符串或布尔值");}
             if(!expected.is_primitive()||expected.is_null())throw Error(Exit::usage,"字段比较仅支持数字、字符串或布尔值");
             if(!expected.is_number()&&op!="=="&&op!="!=")throw Error(Exit::usage,"字符串及布尔值只支持 == 或 !=；64 位整数按精确字符串比较");
         }
