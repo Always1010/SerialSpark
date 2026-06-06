@@ -1,0 +1,95 @@
+# SerialSpark
+
+SerialSpark 是面向 Linux 的串口收发、原始数据记录与离线协议分析命令行工具。它可以列出串口和可见占用、复用命名串口配置、发送或交互收发，并把 TX/RX 原始事件保存为可重解析的 `.ssr` 记录。实时协议解析是可选的；离线解析可以更换协议配置，原记录保持不变。
+
+## 构建
+
+目标环境为 Ubuntu 24.04，使用 GCC 13、CMake 3.28。项目是 C++20；CMake 按当前主机架构生成原生构建和 Debian 包（例如 aarch64 主机对应 Debian 的 arm64 架构）。安装构建依赖：
+
+```sh
+sudo apt install build-essential cmake pkg-config libsqlite3-dev libudev-dev nlohmann-json3-dev libcli11-dev python3
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j2
+```
+
+运行 `build/serialspark --help` 查看命令，`build/serialspark <命令> --help` 查看参数。需要运行 CTest 时，配置中默认启用测试。
+
+## 快速上手
+
+先检查系统可见串口：
+
+```sh
+build/serialspark ports
+```
+
+保存常用配置（保存不打开设备），然后查看、列出、导出或删除配置：
+
+```sh
+build/serialspark profile save bench --port /dev/ttyUSB0 --baud 115200 --data-bits 8 --parity none --stop-bits 1 --flow none
+build/serialspark profile list
+build/serialspark profile show bench
+build/serialspark profile export bench bench.json
+build/serialspark profile import lab bench.json
+build/serialspark profile delete lab
+```
+
+保存或导入同名配置可加 `--replace`。配置存放在 `$XDG_CONFIG_HOME/serialspark/profiles/`；未设置 `XDG_CONFIG_HOME` 时为 `$HOME/.config/serialspark/profiles/`。`--profile` 引用保存的名称；外部 JSON 文件先通过 `profile import` 导入。命令行显式参数会覆盖配置值。
+
+用一次发送、交互会话或只接收采集：
+
+```sh
+build/serialspark send --profile bench --text 'PING' --wait-reply
+printf 'raw bytes' | build/serialspark send --profile bench --stdin
+build/serialspark session --profile bench --record run.ssr
+build/serialspark capture --profile bench --record run.ssr --duration 30s
+```
+
+`send` 支持 `--text`、`--hex`、`--file` 和 `--stdin`，每次只能选一种。管道和文件按原始字节发送；文本不会解释反斜杠转义，换行需显式指定 `--newline lf`、`cr` 或 `crlf`，默认不追加。成功写入表示驱动接受了数据；需要确认设备回复时使用 `--wait-reply` 或 `--reply-hex`。`--drain` 只等待驱动输出队列变空，不能证明对端已收到。
+
+交互模式中，普通输入行作为文本发送；命令包括 `:send text ...`、`:send hex ...`、`:send file ...`、`:display hex|text|both`、`:status`、`:disconnect`、`:connect` 和 `:quit`。冒号开头的普通文本可用 `:send text ...` 发送。当前交互会话不支持实时加载/切换协议配置。
+
+默认写入无进展超时为 2 秒，等待回复超时为 1 秒；时长默认 `0`，即不限制。显示默认 `both`；`human` 适合终端，`jsonl` 输出逐行 JSON，`json` 是同一 JSONL 格式的别名。
+
+## 配置协议与重解析
+
+协议配置是声明式 JSON，版本为 1，可定义分帧、字段、校验和方向覆盖；不执行脚本。先验证，再用样例试解析：
+
+```sh
+build/serialspark protocol validate examples/lines.json
+build/serialspark protocol test examples/lines.json --hex 372C32332E352C310D0A
+build/serialspark protocol test examples/lines.json --file payload.bin --direction rx
+build/serialspark protocol import examples/lines.json shared.json
+build/serialspark protocol export shared.json copy.json
+```
+
+`protocol test` 的协议文件是位置参数；输入必须且只能选 `--hex` 或 `--file`。文件输入不含采集时间，因此不会模拟帧间超时。分帧模式、字段类型、校验算法、来源追溯等配置细节见 [协议配置说明](docs/protocol.md)，并可参考 `examples/sensor.json` 和 `examples/lines.json`。
+
+将协议直接用于实时会话或采集可加 `--protocol examples/lines.json`。记录后可检查摘要、查看原始事件、离线解析和导出：
+
+```sh
+build/serialspark log info run.ssr
+build/serialspark log view run.ssr --direction rx
+build/serialspark log parse run.ssr --protocol examples/lines.json --direction rx --where 'temperature > 24'
+build/serialspark log export run.ssr --protocol examples/lines.json --format csv --output parsed.csv
+build/serialspark log export run.ssr --direction rx --format bin --output rx.bin
+```
+
+离线解析会先按完整字节流组帧，再应用消息和字段过滤。`--from-ns`、`--to-ns` 是包含边界的 Unix 墙上时间纳秒范围，时间取帧最后一个原始字节所在事件的采集时间。`--where` 支持中文字段名；含比较符或首尾空白的字段名用 JSON 双引号，例如 `'"温 度>" >= 30'`。比较值使用 JSON 数字、字符串或布尔值，字符串和布尔值仅支持 `==`、`!=`；64 位整数按精确十进制字符串比较。`--contains-text` 按 UTF-8 原始字节搜索。原始 `log view` 的内容过滤作用于单个事件，解析过滤作用于完整帧。
+
+CSV 包含配置、来源范围、错误和单位等解析上下文。BIN 只允许导出单一方向的原始字节，会丢失事件时间；不能与协议解析同时使用。JSONL 用于保留事件结构。`.ssr` 是 SQLite 数据库，活动记录处于 WAL 模式；`.ssr` 与其 `-wal`、`-shm` 文件应作为一组保留。只有干净关闭后的记录及分段适合单独分享或复制。
+
+记录默认按 1 GiB 阈值轮转为 `.ssr.partN.ssr` 分段，阈值在事务提交后检查，可能有少量超出；`--quota-bytes 0` 表示不限额，配额包含数据库及 WAL 大小，在达到阈值时停止采集，不会删除历史记录。分析从首段打开，分享时保留全部分段。`log info` 检查关闭状态、事件序号和持久化边界；`complete` 表示记录内部完整性，不证明物理线路上的每个字节均已被操作系统取得。
+
+内部记录队列上限 16 MiB、输出队列上限 4 MiB、最大单帧 64 KiB，SQLite 缓存上限 32 MiB；JSON 配置、单条事件细节和会话元数据分别限制为 1 MiB。记录按 100ms 或 256 KiB 批量提交，使用 WAL 与 FULL 同步；异常退出可能失去尚未提交的尾部，以 `persisted_seq` 为准。时间戳是应用观察时间，不是 UART 线上逐字节硬件时间；XON/XOFF 流控字符由驱动处理，不保证出现在应用原始记录中。无硬件背压或采集能力不足时，工具会报告故障与潜在缺口，不能保证外部持续输入永不溢出。
+
+退出码：0 成功；2 参数或配置错误；3 串口连接错误；4 I/O 或输出错误；5 部分发送；6 超时；7 记录错误；8 协议试解析存在帧错误；130 用户取消。具体失败原因写到标准错误。
+
+## 当前边界
+
+自动化测试使用 Linux PTY 覆盖命令行收发、记录和离线重解析路径。PTY 测试验证软件行为，不验证真实电气连接、USB 转串口芯片或具体设备。当前没有真实 UART 硬件验收结果，也没有自动重连或丢包重传功能。
+
+后续阶段增加常用设备指令、自动发送、完整 Modbus RTU、已有上位机通信观察，再扩展重放与设备模拟。当前支持 Modbus 使用的 CRC 算法，尚未实现完整 Modbus RTU 协议。
+
+通信观察计划先提供 PTY 代理：已有上位机改为连接工具创建的虚拟串口，工具转发到由其控制的真实串口并记录双向字节。该方式要求上位机允许更换端口，专有 ioctl、控制线和精确物理时序需单独评估。第二次打开同一真实串口无法可靠旁路观察；不能调整上位机时需要额外采集硬件，并分别确定 TTL、RS-232、RS-485 的接线和方向识别条件。首版尚未提供观察命令。
+
+架构见 [模块说明](docs/architecture.md)，测试范围及真实设备验收见 [测试说明](docs/testing.md)。
