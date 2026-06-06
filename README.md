@@ -14,6 +14,14 @@ cmake --build build -j2
 
 运行 `build/serialspark --help` 查看命令，`build/serialspark <命令> --help` 查看参数。需要运行 CTest 时，配置中默认启用测试。
 
+生成原生 Debian 安装包：
+
+```sh
+cpack --config build/CPackConfig.cmake -B build/packages
+```
+
+生成文件名为 `serialspark_0.1.0_<Debian架构>.deb`。例如 arm64 主机可安装 `sudo apt install ./build/packages/serialspark_0.1.0_arm64.deb`；其他主机选择实际生成的架构文件。包安装命令为 `serialspark`，文档与样例位于 `/usr/share/doc/serialspark/`。源码目录的构建可以直接运行，无需安装。
+
 ## 快速上手
 
 先检查系统可见串口：
