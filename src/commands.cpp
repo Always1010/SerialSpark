@@ -91,7 +91,7 @@ struct LogArgs {
                 auto add=[&](const Json& j){if(j.contains("fields"))for(const auto& field:j["fields"]){auto name=field.at("name").get<std::string>();if(seen.insert(name).second)names.push_back(name);}};
                 add(engine->config());for(auto direction:{"tx","rx"})if(engine->config().contains(direction))add(engine->config()[direction]);
                 std::vector<Json> columns={"direction","wall_ns","mono_ns","status","raw_hex","sources","errors","protocol_config"};
-                for(const auto& name:names){columns.push_back(name);columns.push_back(name+".unit");}csv_row(out,columns);
+                for(const auto& name:names){columns.push_back("field."+name);columns.push_back("unit."+name);}csv_row(out,columns);
             } else out.emit({{"schema_version",1},{"kind","parse_config"},{"config_ref",0},{"parser_version","0.1.0"},{"config",engine->config()}});
         }
         auto frame=[&](Json j) {

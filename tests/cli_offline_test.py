@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory() as directory:
     run("log", "export", log, "--format", "bin", expected=2)
     run("log", "export", log, "--format", "bin", "--direction", "rx", "--output", exported, expected=4)
     rows = list(csv.DictReader(io.StringIO(run("log", "export", log, "--protocol", PROTOCOL, "--format", "csv").decode())))
-    assert len(rows) == 3 and rows[0]["temperature"] == "23.5"
+    assert len(rows) == 3 and rows[0]["field.temperature"] == "23.5"
     assert json.loads(rows[0]["sources"]) == live[0]["sources"]
     assert json.loads(rows[0]["protocol_config"]) == json.loads(PROTOCOL.read_text())
     modified = json.loads(PROTOCOL.read_text())
@@ -87,6 +87,11 @@ with tempfile.TemporaryDirectory() as directory:
     new_protocol.write_text(json.dumps(modified))
     quoted = frames(run("log", "parse", log, "--protocol", new_protocol, "--where", '"温 度>" == 47', "--format", "jsonl"))
     assert len(quoted) == 1 and quoted[0]["fields"]["温 度>"] == 47
+    modified["fields"][1]["name"] = "status"
+    new_protocol.write_text(json.dumps(modified))
+    collision = list(csv.DictReader(io.StringIO(run("log", "export", log, "--protocol", new_protocol, "--format", "csv").decode())))
+    assert collision[0]["status"] == "ok" and collision[0]["field.status"] == "47.0"
+    assert collision[0]["unit.status"] == "°C"
     assert {p: hashlib.sha256(p.read_bytes()).digest() for p in root.glob("*.ssr")} == original
 
     # Every parsed byte remains attributable to stored raw data.
