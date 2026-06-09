@@ -73,6 +73,10 @@ with tempfile.TemporaryDirectory() as directory:
         assert timeout.returncode == 6, timeout.stderr
         assert any(e["kind"] == "send_end" and e["detail"]["status"] == "complete" for e in events(timeout.stdout))
         receive(master, 1)
+        nul_source = subprocess.run([EXE, "session", "--port", port, "--format", "jsonl"], input=f":send file {source}\0suffix\n".encode(), capture_output=True, timeout=3)
+        assert nul_source.returncode == 0, nul_source.stderr
+        assert any(e["kind"] == "command_error" for e in events(nul_source.stdout))
+        assert not any(e["kind"] == "data" and e["direction"] == "tx" for e in events(nul_source.stdout))
         saved = subprocess.run([EXE, "profile", "save", "bench", "--port", port, "--baud", "9600"], env=environment, capture_output=True)
         assert saved.returncode == 0, saved.stderr
         reused = subprocess.run([EXE, "send", "--profile", "bench", "--baud", "115200", "--text", "z", "--format", "jsonl"], env=environment, capture_output=True, timeout=3)

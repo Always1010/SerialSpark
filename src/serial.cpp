@@ -34,6 +34,7 @@ SerialConfig SerialConfig::from_json(const Json& j) {
 }
 void SerialConfig::validate(bool require_port) const {
     if(require_port&&port.empty()) throw Error(Exit::usage,"请指定 --port 或保存的 --profile");
+    if(port.find('\0')!=std::string::npos)throw Error(Exit::usage,"串口路径不能含 NUL 字节");
     if(baud<1||baud>4000000) throw Error(Exit::usage,"波特率范围为 1～4000000；实际支持取决于驱动");
     if(data_bits<5||data_bits>8) throw Error(Exit::usage,"数据位必须为 5～8");
     if(parity!="none"&&parity!="odd"&&parity!="even") throw Error(Exit::usage,"校验位必须为 none、odd 或 even");
