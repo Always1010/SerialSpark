@@ -22,5 +22,9 @@ int main() {
         if(won!=1||!ss::read_json(target).contains("winner"))throw std::runtime_error("configuration publication race");
         std::ifstream previous(target.string()+".tmp");std::string preserved;previous>>preserved;if(preserved!="keep")throw std::runtime_error("temporary file overwritten");
         ss::write_json(target,{{"replaced",true}},true);if(ss::read_json(target)["replaced"]!=true)throw std::runtime_error("explicit replacement");
+        {std::ofstream out(target);out<<"{} trailing";}
+        bool trailing=false;try{ss::read_json(target);}catch(const ss::Error&){trailing=true;}if(!trailing)throw std::runtime_error("trailing invalid config accepted");
+        {std::ofstream out(target);out<<std::string(1024*1024+1,' ');}
+        bool oversized=false;try{ss::read_json(target);}catch(const ss::Error&){oversized=true;}if(!oversized)throw std::runtime_error("oversized config accepted");
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

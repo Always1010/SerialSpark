@@ -53,10 +53,12 @@ std::int64_t mono_ns() {return std::chrono::duration_cast<std::chrono::nanosecon
 Json read_json(const std::filesystem::path& path) {
     std::ifstream in(path,std::ios::binary);
     if(!in) throw Error(Exit::usage,"无法打开配置: "+path.string());
-    in.seekg(0,std::ios::end);
-    if(in.tellg()>1024*1024) throw Error(Exit::usage,"配置文件超过 1 MiB 上限");
-    in.seekg(0);
-    try {Json j;in>>j;return j;} catch(const Json::exception& e) {throw Error(Exit::usage,"JSON 配置错误: "+std::string(e.what()));}
+    std::string contents(1024*1024+1,'\0');in.read(contents.data(),contents.size());
+    auto count=static_cast<std::size_t>(in.gcount());
+    if(count>1024*1024) throw Error(Exit::usage,"配置文件超过 1 MiB 上限");
+    if(!in.eof()&&in.fail())throw Error(Exit::io,"配置文件读取失败: "+path.string());
+    contents.resize(count);
+    try {return Json::parse(contents);} catch(const Json::exception& e) {throw Error(Exit::usage,"JSON 配置错误: "+std::string(e.what()));}
 }
 void write_json(const std::filesystem::path& path,const Json& j,bool replace) {
     auto contents=j.dump(2)+"\n";
