@@ -132,7 +132,9 @@ namespace ss {
             }
             if(j.contains("fields")) {
                 if(!j.at("fields").is_array())bad("fields 必须为数组");
+                if(j.at("fields").size()>256)bad("每个方向最多配置 256 个字段");
                 std::set<std::string> names;
+                std::size_t field_bytes=0;
                 for(const auto& v:j.at("fields")) {
                     keys(v,{"name","type","offset","length","endian","index","scale","bias","unit","enum"});
                     Field a;
@@ -168,6 +170,8 @@ namespace ss {
                         if(!a.enums.is_object())bad("enum 必须为对象");
                         for(auto it=a.enums.begin();it!=a.enums.end();++it)if(!it.value().is_string())bad("enum 值必须为字符串");
                     }
+                    field_bytes+=a.text?s.max:a.length;
+                    if(field_bytes>1024*1024)bad("字段原始长度预算超过 1 MiB（文本字段按最大帧长计）");
                     s.fields.push_back(std::move(a));
                 }
             }

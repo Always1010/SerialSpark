@@ -199,6 +199,13 @@ namespace {
         base["tx"]={{"framing",{{"mode","fixed"},{"length",1}}}};
         base["rx"]=base["tx"];
         rejects(base);
+        base=cfg({{"mode","fixed"},{"length",1}});base["fields"]=Json::array();
+        for(int i=0;i<257;++i)base["fields"].push_back({{"name","f"+std::to_string(i)},{"type","u8"},{"offset",0}});
+        rejects(base);base["fields"].erase(base["fields"].end()-1);
+        Protocol bounded(base);assert(bounded.feed(event({1},1))[0]["fields"].size()==256);
+        base=cfg({{"mode","fixed"},{"length",65536}});base["fields"]=Json::array();
+        for(int i=0;i<17;++i)base["fields"].push_back({{"name","f"+std::to_string(i)},{"type","bytes"},{"offset",0},{"length",65536}});
+        rejects(base);
     }
 }
 int main(){framing();
