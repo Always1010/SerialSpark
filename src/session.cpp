@@ -29,7 +29,7 @@ struct Input {
     Bytes memory;
     std::size_t pos=0;
     ~Input() {if(own&&fd>=0)::close(fd);else if(fd>=0&&flags>=0)fcntl(fd,F_SETFL,flags);}
-    void open_file(const std::string& path) {fd=::open(path.c_str(),O_RDONLY|O_CLOEXEC|O_NONBLOCK);own=true;if(fd<0)throw Error(Exit::io,"无法打开发送文件: "+path+" ("+strerror(errno)+")");}
+    void open_file(const std::string& path) {if(path.find('\0')!=std::string::npos)throw Error(Exit::usage,"发送文件路径不能含 NUL 字节");fd=::open(path.c_str(),O_RDONLY|O_CLOEXEC|O_NONBLOCK);own=true;if(fd<0)throw Error(Exit::io,"无法打开发送文件: "+path+" ("+strerror(errno)+")");}
     void standard() {fd=STDIN_FILENO;flags=fcntl(fd,F_GETFL);if(flags<0||fcntl(fd,F_SETFL,flags|O_NONBLOCK)<0)throw Error(Exit::io,"无法设置标准输入");}
 };
 Bytes text_bytes(const std::string& s,const std::string& newline) {

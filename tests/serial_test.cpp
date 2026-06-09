@@ -23,6 +23,7 @@ int main() {
             bool rejected=false;try{ss::SerialConfig::from_json(bad);}catch(const ss::Error&){rejected=true;}
             if(!rejected)throw std::runtime_error("configuration numeric narrowing");
         }
+        bool nul=false;try{ss::SerialConfig::from_json({{"port",std::string(path)+std::string("\0wrong",6)}});}catch(const ss::Error&){nul=true;}if(!nul)throw std::runtime_error("truncated port path accepted");
         port.close();c.flow="none";ss::SerialPort custom(c);
         if(custom.actual().at("baud")!=123456) throw std::runtime_error("custom baud readback");
         close(master);master=-1;
