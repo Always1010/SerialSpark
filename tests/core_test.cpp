@@ -11,6 +11,7 @@ int main() {
         for(auto input:{"ABC","ZZ","0x01"}) {bool failed=false;try{ss::unhex(input);}catch(const ss::Error&){failed=true;}if(!failed) throw std::runtime_error("bad hex accepted");}
         auto display=ss::escaped(ss::Bytes{0,27,'[','3','1','m',255});
         if(display!="\\x00\\x1B[31m\\xFF") throw std::runtime_error("unsafe display");
+        if(ss::escaped(ss::Bytes{0xC2,0x9B,'3','1','m'})!="\\xC2\\x9B31m")throw std::runtime_error("UTF-8 terminal control emitted");
         ss::RawEvent e{1,2,3,"data","rx",all,ss::Json::object()};
         if(ss::event_from_json(ss::event_json(e)).bytes!=all) throw std::runtime_error("event roundtrip");
         auto dir=std::filesystem::temp_directory_path()/("serialspark-config-"+std::to_string(getpid()));std::filesystem::create_directory(dir);

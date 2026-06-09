@@ -42,6 +42,8 @@ std::string escaped(std::span<const std::uint8_t> bytes) {
             for(std::size_t j=1;valid&&j<len;++j) valid=(bytes[i+j]&0xC0)==0x80;
             if(valid&&len>=3) valid=!(b==0xE0&&bytes[i+1]<0xA0)&&!(b==0xED&&bytes[i+1]>=0xA0);
             if(valid&&len==4) valid=!(b==0xF0&&bytes[i+1]<0x90)&&!(b==0xF4&&bytes[i+1]>=0x90);
+            // Unicode C1 controls must remain visible bytes, even in valid UTF-8.
+            if(valid&&len==2&&b==0xC2&&bytes[i+1]<=0x9F)valid=false;
             if(valid) {out.append(reinterpret_cast<const char*>(bytes.data()+i),len);i+=len;}
             else {out+="\\x"+hex(bytes.subspan(i,1));++i;}
         }
