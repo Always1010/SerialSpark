@@ -199,24 +199,36 @@ void read_log(const std::filesystem::path& path,const std::function<void(const R
     });
 }
 Json log_info(const std::filesystem::path& path) {
-    Json info={{"schema_version",1},{"segments",Json::array()},{"event_count",0},{"raw_bytes",0},{"complete",true}};
+    Json info={{"schema_version",1},{"segments",Json::array()},{"event_count",0},{"raw_bytes",0},
+        {"event_payload_bytes",0},{"tx_data_bytes",0},{"rx_data_bytes",0},{"data_bytes",0},{"complete",true}};
     std::int64_t previous=0;
     segments(path,[&](sqlite3* db,const Json& m,const auto& p) {
         sqlite3_stmt* raw=nullptr;
-        if(sqlite3_prepare_v2(db,"SELECT count(*),coalesce(sum(length(bytes)),0),coalesce(min(seq),0),coalesce(max(seq),0) FROM events",-1,&raw,nullptr)!=SQLITE_OK) throw Error(Exit::record,sqlite3_errmsg(db));
+        if(sqlite3_prepare_v2(db,
+            "SELECT count(*),coalesce(sum(length(bytes)),0),coalesce(min(seq),0),coalesce(max(seq),0),"
+            "coalesce(sum(CASE WHEN kind='data' AND direction='tx' THEN length(bytes) ELSE 0 END),0),"
+            "coalesce(sum(CASE WHEN kind='data' AND direction='rx' THEN length(bytes) ELSE 0 END),0) FROM events",
+            -1,&raw,nullptr)!=SQLITE_OK) throw Error(Exit::record,sqlite3_errmsg(db));
         std::unique_ptr<sqlite3_stmt,decltype(&sqlite3_finalize)> statement(raw,sqlite3_finalize);
         if(sqlite3_step(raw)!=SQLITE_ROW) throw Error(Exit::record,sqlite3_errmsg(db));
         auto count=sqlite3_column_int64(raw,0),bytes=sqlite3_column_int64(raw,1);
         auto first=sqlite3_column_int64(raw,2),last=sqlite3_column_int64(raw,3);
+        auto tx=sqlite3_column_int64(raw,4),rx=sqlite3_column_int64(raw,5);
         bool sequence_valid=!count||(previous!=INT64_MAX&&first==previous+1&&first>0&&last>=first&&count==last-first+1);
         auto expected=count?last:previous;bool persisted_valid=m["persisted_seq"]==expected;
         info["event_count"]=info["event_count"].get<std::int64_t>()+count;info["raw_bytes"]=info["raw_bytes"].get<std::int64_t>()+bytes;
+        info["event_payload_bytes"]=info["raw_bytes"];
+        info["tx_data_bytes"]=info["tx_data_bytes"].get<std::int64_t>()+tx;
+        info["rx_data_bytes"]=info["rx_data_bytes"].get<std::int64_t>()+rx;
+        info["data_bytes"]=info["tx_data_bytes"].get<std::int64_t>()+info["rx_data_bytes"].get<std::int64_t>();
         bool clean=m.value("clean_shutdown",false);if(!clean||!sequence_valid||!persisted_valid) info["complete"]=false;
         Json summary=m;
         if(!info["segments"].empty()) {
             summary=Json::object();for(auto key:{"schema_version","segment","clean_shutdown","persisted_seq","next_segment"})if(m.contains(key))summary[key]=m[key];
         }
-        info["segments"].push_back({{"path",p.string()},{"metadata",summary},{"event_count",count},{"raw_bytes",bytes},{"sequence_valid",sequence_valid},{"persisted_boundary_valid",persisted_valid}});
+        info["segments"].push_back({{"path",p.string()},{"metadata",summary},{"event_count",count},{"raw_bytes",bytes},
+            {"event_payload_bytes",bytes},{"tx_data_bytes",tx},{"rx_data_bytes",rx},{"data_bytes",tx+rx},
+            {"sequence_valid",sequence_valid},{"persisted_boundary_valid",persisted_valid}});
         if(count)previous=last;
     });return info;
 }
