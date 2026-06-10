@@ -84,6 +84,13 @@ build/serialspark log export run.ssr --protocol examples/lines.json --format csv
 build/serialspark log export run.ssr --direction rx --format bin --output rx.bin
 ```
 
+双向收发可使用 `examples/lines-duplex.json`：TX 只按 CRLF 组帧，不解析传感器字段；RX 解析 `7,23.5,1\r\n` 一类回复。两个方向共用 CRLF 边界，发送文本需显式追加换行。设备须支持对应命令和回复格式：
+
+```sh
+build/serialspark send --profile bench --text PING --newline crlf --protocol examples/lines-duplex.json --wait-reply --record run.ssr
+build/serialspark log parse run.ssr --protocol examples/lines-duplex.json --direction rx
+```
+
 离线解析会先按完整字节流组帧，再应用消息和字段过滤。`--from-ns`、`--to-ns` 是包含边界的 Unix 墙上时间纳秒范围，时间取帧最后一个原始字节所在事件的采集时间。`--where` 支持中文字段名；含比较符或首尾空白的字段名用 JSON 双引号，例如 `'"温 度>" >= 30'`。比较值使用 JSON 数字、字符串或布尔值，字符串和布尔值仅支持 `==`、`!=`；64 位整数按精确十进制字符串比较。`--contains-text` 按 UTF-8 原始字节搜索。原始 `log view` 的内容过滤作用于单个事件，解析过滤作用于完整帧。
 
 CSV 包含配置、来源范围、错误和单位等解析上下文；字段列采用 `field.<名称>`、单位列采用 `unit.<名称>`，避免设备字段与 `status` 等记录元数据同名。BIN 只允许导出单一方向的原始字节，会丢失事件时间；不能与协议解析同时使用。JSONL 用于保留事件结构。`.ssr` 是 SQLite 数据库，活动记录处于 WAL 模式；`.ssr` 与其 `-wal`、`-shm` 文件应作为一组保留。只有干净关闭后的记录及分段适合单独分享或复制。
