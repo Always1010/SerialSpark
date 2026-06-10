@@ -101,6 +101,34 @@ with tempfile.TemporaryDirectory() as directory:
         assert timeout.returncode == 6, timeout.stderr
         assert any(e["kind"] == "send_end" and e["detail"]["status"] == "complete" for e in events(timeout.stdout))
         receive(master, 1)
+        duplex = pathlib.Path(__file__).resolve().parents[1] / "examples" / "lines-duplex.json"
+        duplex_log = root / "duplex.ssr"
+        duplex_received = []
+
+        def duplex_peer():
+            duplex_received.append(receive(master, 6))
+            os.write(master, b"7,23.")
+            time.sleep(0.015)
+            os.write(master, b"5,1\r\n")
+
+        worker = threading.Thread(target=duplex_peer, daemon=True)
+        worker.start()
+        exchanged = subprocess.run([EXE, "send", "--port", port, "--text", "PING", "--newline", "crlf", "--protocol", str(duplex), "--wait-reply", "--record", str(duplex_log), "--format", "jsonl"], capture_output=True, timeout=3)
+        worker.join(timeout=3)
+        assert exchanged.returncode == 0, exchanged.stderr
+        assert duplex_received == [b"PING\r\n"]
+        live_frames = [e for e in events(exchanged.stdout) if e["kind"] == "frame"]
+        assert [(e["direction"], e["status"]) for e in live_frames] == [("tx", "ok"), ("rx", "ok")]
+        assert live_frames[0]["fields"] == {} and live_frames[1]["fields"]["temperature"] == 23.5
+        replay = subprocess.run([EXE, "log", "parse", str(duplex_log), "--protocol", str(duplex), "--format", "jsonl"], capture_output=True, timeout=3)
+        assert replay.returncode == 0, replay.stderr
+        replay_frames = [e for e in events(replay.stdout) if e["kind"] == "frame"]
+        for frame in replay_frames:
+            frame.pop("parse_config_ref")
+        assert replay_frames == live_frames
+        malformed = subprocess.run([EXE, "protocol", "test", str(duplex), "--direction", "rx", "--hex", "50494E470D0A", "--format", "jsonl"], capture_output=True, timeout=3)
+        assert malformed.returncode == 8
+        assert any(e["status"] == "error" for e in events(malformed.stdout))
         nul_source = subprocess.run([EXE, "session", "--port", port, "--format", "jsonl"], input=f":send file {source}\0suffix\n".encode(), capture_output=True, timeout=3)
         assert nul_source.returncode == 0, nul_source.stderr
         assert any(e["kind"] == "command_error" for e in events(nul_source.stdout))

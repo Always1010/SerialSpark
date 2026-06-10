@@ -4,6 +4,8 @@
 
 [传感器配置](../examples/sensor.json) 展示带帧头和 CRC 的二进制数据；[行文本配置](../examples/lines.json) 解析 `7,23.5,1\r\n`。
 
+[双向行文本配置](../examples/lines-duplex.json) 为 TX、RX 共用 CRLF 分帧，并分别配置字段：TX 的空字段数组允许 `PING\r\n` 一类命令，RX 解析传感器字段。共享字段会同时用于两个方向；命令和回复结构不同时应使用方向对象，避免把 TX 命令套入 RX 的字段规则。该样例仍拒绝不符合字段规则的 RX。
+
 ## 分帧
 
 每个 `framing` 对象都可使用 `min_frame_bytes`（默认 1）、`max_frame_bytes`（默认 65536）和 `assembly_timeout_ms`（默认 0，关闭超时）。最小值和最大值均为包含帧头、分隔符和校验的线上字节数，范围为 1～65536。最大值限制每个方向的缓存；连续输入也不能积累无界残留。
