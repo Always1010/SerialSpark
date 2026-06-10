@@ -54,7 +54,7 @@ build/serialspark capture --profile bench --record run.ssr --duration 30s
 
 `send` 支持 `--text`、`--hex`、`--file` 和 `--stdin`，每次只能选一种。管道和文件按原始字节发送；文本不会解释反斜杠转义，换行需显式指定 `--newline lf`、`cr` 或 `crlf`，默认不追加。成功写入表示驱动接受了数据；需要确认设备回复时使用 `--wait-reply` 或 `--reply-hex`。`--drain` 只等待驱动输出队列变空，不能证明对端已收到。
 
-交互模式中，普通输入行作为文本发送；命令包括 `:send text ...`、`:send hex ...`、`:send file ...`、`:display hex|text|both`、`:status`、`:disconnect`、`:connect` 和 `:quit`。冒号开头的普通文本可用 `:send text ...` 发送。当前交互会话不支持实时加载/切换协议配置。
+交互模式中，以换行结束的普通输入行作为文本发送；命令包括 `:send text ...`、`:send hex ...`、`:send file ...`、`:display hex|text|both`、`:status`、`:disconnect`、`:connect` 和 `:quit`。输入结束时未换行的内容会明确报错且不发送，未完成发送会被取消；脚本原始字节输入使用 `send --stdin`。冒号开头的普通文本可用 `:send text ...` 发送。当前交互会话不支持实时加载/切换协议配置。
 
 默认写入无进展超时为 2 秒，等待回复超时为 1 秒；时长默认 `0`，即不限制。显示默认 `both`；`human` 适合终端，`jsonl` 输出逐行 JSON，`json` 是同一 JSONL 格式的别名。
 

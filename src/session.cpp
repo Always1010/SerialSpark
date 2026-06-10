@@ -131,6 +131,7 @@ int run_session(const SessionOptions& options) {
     auto begin=[&](std::unique_ptr<Input> next) {
         if(active)throw Error(Exit::usage,"当前发送尚未完成");
         if(!port)throw Error(Exit::connect,"设备未连接，请先 :connect");
+        if(next->fd<0&&next->memory.empty())throw Error(Exit::usage,"发送内容为空；请提供字节或配置文本换行");
         source=std::move(next);active=true;complete=false;source_eof=false;source_read_failed=false;first_tx=false;first_tx_seq=0;reply_seen=false;accepted=requested=0;chunk.clear();match_tail.clear();offset=0;progress=mono_ns();++request;
         event("send_begin","tx",{},{{"request",request},{"completion_scope","driver_accepted"}});
     };
@@ -176,7 +177,7 @@ int run_session(const SessionOptions& options) {
             }
             if(options.mode=="session"&&(descriptors[1].revents&(POLLIN|POLLHUP))) {
                 char buffer[4096];ssize_t n=read(interactive.fd,buffer,sizeof(buffer));
-                if(n==0) {if(active)throw Error(Exit::cancelled,"输入结束，取消未完成发送");quit=true;}
+                if(n==0) {if(active)throw Error(Exit::cancelled,"输入结束，取消未完成发送");if(!line.empty())throw Error(Exit::usage,"交互输入结束时存在未换行内容，未发送；请添加换行或使用 send --stdin");quit=true;}
                 else if(n>0) {
                     line.append(buffer,n);if(line.size()>65536)throw Error(Exit::usage,"交互输入超过 64 KiB 上限");
                     std::size_t newline;
@@ -205,7 +206,7 @@ int run_session(const SessionOptions& options) {
                     if(source->fd<0) {
                         auto count=std::min<std::size_t>(4096,source->memory.size()-source->pos);
                         chunk.assign(source->memory.begin()+source->pos,source->memory.begin()+source->pos+count);source->pos+=count;
-                        if(!count)source_eof=true;
+                        if(source->pos==source->memory.size())source_eof=true;
                     } else {
                         pollfd p{source->fd,POLLIN,0};poll(&p,1,0);
                         if(p.revents&(POLLIN|POLLHUP|POLLERR)) {
