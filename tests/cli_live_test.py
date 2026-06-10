@@ -77,6 +77,15 @@ with tempfile.TemporaryDirectory() as directory:
         assert nul_source.returncode == 0, nul_source.stderr
         assert any(e["kind"] == "command_error" for e in events(nul_source.stdout))
         assert not any(e["kind"] == "data" and e["direction"] == "tx" for e in events(nul_source.stdout))
+        complete_line = subprocess.run([EXE, "session", "--port", port, "--format", "jsonl"], input=b"PING\n", capture_output=True, timeout=3)
+        assert complete_line.returncode == 0, complete_line.stderr
+        assert receive(master, 4) == b"PING"
+        assert any(e["kind"] == "send_end" and e["detail"]["status"] == "complete" for e in events(complete_line.stdout))
+        incomplete_line = subprocess.run([EXE, "session", "--port", port, "--format", "jsonl"], input=b"PING", capture_output=True, timeout=3)
+        assert incomplete_line.returncode == 2
+        assert not any(e["kind"] == "data" and e["direction"] == "tx" for e in events(incomplete_line.stdout))
+        blank = subprocess.run([EXE, "session", "--port", port, "--format", "jsonl"], input=b"\n", capture_output=True, timeout=3)
+        assert blank.returncode == 0 and any(e["kind"] == "command_error" for e in events(blank.stdout))
         saved = subprocess.run([EXE, "profile", "save", "bench", "--port", port, "--baud", "9600"], env=environment, capture_output=True)
         assert saved.returncode == 0, saved.stderr
         reused = subprocess.run([EXE, "send", "--profile", "bench", "--baud", "115200", "--text", "z", "--format", "jsonl"], env=environment, capture_output=True, timeout=3)
