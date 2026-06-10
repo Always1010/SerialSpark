@@ -40,6 +40,29 @@ def receive(master, length):
 with tempfile.TemporaryDirectory() as directory:
     root = pathlib.Path(directory)
     environment = dict(os.environ, XDG_CONFIG_HOME=str(root / "config"))
+    # Reject invalid version types before importing, replacing or opening a port.
+    profile_file = root / "profile.json"
+    profile_file.write_text(json.dumps({"schema_version": 1, "config": {"port": "/does-not-exist"}}))
+    imported = subprocess.run([EXE, "profile", "import", "version-check", str(profile_file)], env=environment, capture_output=True, timeout=3)
+    assert imported.returncode == 0, imported.stderr
+    stored_profile = root / "config" / "serialspark" / "profiles" / "version-check.json"
+    original_profile = stored_profile.read_bytes()
+    assert json.loads(original_profile)["schema_version"] == 1
+    invalid_profiles = [{"schema_version": value, "config": {"port": "/does-not-exist"}}
+                        for value in (1.0, 1.1, 1.9, True, False, "1", None, 0, 2, -1, 18446744073709551615)]
+    invalid_profiles.append({"config": {"port": "/does-not-exist"}})
+    for invalid_profile in invalid_profiles:
+        profile_file.write_text(json.dumps(invalid_profile))
+        for name, flags in (("rejected-version", []), ("version-check", ["--replace"])):
+            rejected = subprocess.run([EXE, "profile", "import", name, str(profile_file), *flags], env=environment, capture_output=True, timeout=3)
+            assert rejected.returncode == 2 and b"schema_version" in rejected.stderr, (invalid_profile, rejected.stderr)
+            assert stored_profile.read_bytes() == original_profile
+            assert not (stored_profile.parent / "rejected-version.json").exists()
+        stored_profile.write_bytes(profile_file.read_bytes())
+        rejected = subprocess.run([EXE, "send", "--profile", "version-check", "--text", "x", "--format", "jsonl"], env=environment, capture_output=True, timeout=3)
+        assert rejected.returncode == 2 and b"schema_version" in rejected.stderr, (invalid_profile, rejected.stderr)
+        assert rejected.stdout == b"", "invalid profile reached the live session"
+        stored_profile.write_bytes(original_profile)
     master, port = serial_pair()
     try:
         payload = bytes(range(256))

@@ -28,7 +28,10 @@ void save_named(const std::string& category,const std::string& name,const Json& 
     write_json(path,j,replace);
 }
 Json profile_config(const Json& j) {
-    if(!j.is_object()||j.value("schema_version",0)!=1||!j.contains("config"))throw Error(Exit::usage,"通信配置应为 schema_version:1 和 config 对象");
+    if(!j.is_object())throw Error(Exit::usage,"通信配置必须为 JSON 对象");
+    if(!j.contains("schema_version")||!j.at("schema_version").is_number_integer()||j.at("schema_version")!=1)
+        throw Error(Exit::usage,"通信配置 schema_version 必须为整数 1");
+    if(!j.contains("config"))throw Error(Exit::usage,"通信配置缺少 config 对象");
     for(auto i=j.begin();i!=j.end();++i)if(i.key()!="schema_version"&&i.key()!="config")throw Error(Exit::usage,"未知配置键: "+i.key());
     return SerialConfig::from_json(j["config"]).json();
 }

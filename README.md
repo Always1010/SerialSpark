@@ -43,6 +43,8 @@ build/serialspark profile delete lab
 
 保存或导入同名配置可加 `--replace`。配置存放在 `$XDG_CONFIG_HOME/serialspark/profiles/`；未设置 `XDG_CONFIG_HOME` 时为 `$HOME/.config/serialspark/profiles/`。`--profile` 引用保存的名称；外部 JSON 文件先通过 `profile import` 导入。命令行显式参数会覆盖配置值。
 
+通信配置根对象必须包含整数 `schema_version: 1` 和 `config` 对象。浮点数（包括 `1.0`）、布尔值、字符串和其他版本均拒绝；导入失败不会创建配置或覆盖已有配置。
+
 用一次发送、交互会话或只接收采集：
 
 ```sh
