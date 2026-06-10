@@ -92,6 +92,11 @@ with tempfile.TemporaryDirectory() as directory:
         assert b"".join(row[0] for row in db.execute("select bytes from events where kind='data' and direction='tx' order by seq")) == payload
         assert json.loads(db.execute("select value from metadata where key='clean_shutdown'").fetchone()[0]) is True
         db.close()
+        summary = subprocess.run([EXE, "log", "info", str(log), "--format", "jsonl"], capture_output=True, timeout=3)
+        assert summary.returncode == 0, summary.stderr
+        stats = json.loads(summary.stdout)
+        assert stats["tx_data_bytes"] == 256 and stats["rx_data_bytes"] == 4 and stats["data_bytes"] == 260
+        assert stats["raw_bytes"] == stats["event_payload_bytes"] == 516
         timeout = subprocess.run([EXE, "send", "--port", port, "--text", "x", "--wait-reply", "--reply-timeout", "60ms", "--format", "jsonl"], capture_output=True, timeout=3)
         assert timeout.returncode == 6, timeout.stderr
         assert any(e["kind"] == "send_end" and e["detail"]["status"] == "complete" for e in events(timeout.stdout))
@@ -122,10 +127,16 @@ with tempfile.TemporaryDirectory() as directory:
     try:
         large = root / "large.bin"
         large.write_bytes(b"x" * (2 * 1024 * 1024))
-        blocked = subprocess.run([EXE, "send", "--port", port, "--file", str(large), "--write-timeout", "60ms", "--format", "jsonl"], capture_output=True, timeout=3)
+        partial_log = root / "partial.ssr"
+        blocked = subprocess.run([EXE, "send", "--port", port, "--file", str(large), "--record", str(partial_log), "--write-timeout", "60ms", "--format", "jsonl"], capture_output=True, timeout=3)
         assert blocked.returncode == 5, (blocked.returncode, blocked.stderr)
         end = next(e for e in events(blocked.stdout) if e["kind"] == "send_end")
         assert end["detail"]["status"] == "partial" and 0 < end["detail"]["accepted_bytes"] < large.stat().st_size
+        summary = subprocess.run([EXE, "log", "info", str(partial_log), "--format", "jsonl"], capture_output=True, timeout=3)
+        assert summary.returncode == 0, summary.stderr
+        stats = json.loads(summary.stdout)
+        assert stats["data_bytes"] == stats["tx_data_bytes"] == end["detail"]["accepted_bytes"] and stats["rx_data_bytes"] == 0
+        assert stats["event_payload_bytes"] == stats["raw_bytes"] == stats["data_bytes"] + end["detail"]["requested_bytes_read"]
         receive(master, end["detail"]["accepted_bytes"])
         stopped = subprocess.run([EXE, "session", "--port", port, "--format", "jsonl"], input=f":send file {large}\n:quit\n".encode(), capture_output=True, timeout=3)
         assert stopped.returncode == 130, (stopped.returncode, stopped.stderr)

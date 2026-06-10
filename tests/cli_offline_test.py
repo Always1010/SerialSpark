@@ -57,6 +57,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert parsed == live
     info = json.loads(run("log", "info", log, "--format", "json"))
     assert info["complete"] is True and info["raw_bytes"] == len(raw)
+    assert info["event_payload_bytes"] == info["data_bytes"] == info["rx_data_bytes"] == len(raw) and info["tx_data_bytes"] == 0
     selected = frames(run("log", "parse", log, "--protocol", PROTOCOL, "--direction", "rx", "--where", "temperature > 24", "--format", "jsonl"))
     assert len(selected) == 1 and selected[0]["fields"]["temperature"] == 25
     content = frames(run("log", "parse", log, "--protocol", PROTOCOL, "--contains-text", "23.5", "--format", "jsonl"))
@@ -120,6 +121,8 @@ with tempfile.TemporaryDirectory() as directory:
     db.commit()
     db.close()
     assert run("log", "export", empty, "--format", "bin", "--direction", "rx") == b""
+    empty_info = json.loads(run("log", "info", empty, "--format", "jsonl"))
+    assert all(empty_info[key] == 0 for key in ("raw_bytes", "event_payload_bytes", "data_bytes", "tx_data_bytes", "rx_data_bytes"))
     # Damaged external records fail with the record error code, not a config error.
     db = sqlite3.connect(log)
     db.execute("update metadata set value='not json' where key='session'")
