@@ -60,6 +60,16 @@ build/serialspark capture --profile bench --record run.ssr --duration 30s
 
 默认写入无进展超时为 2 秒，等待回复超时为 1 秒；时长默认 `0`，即不限制。显示默认 `both`；`human` 适合终端，`jsonl` 输出逐行 JSON，`json` 是同一 JSONL 格式的别名。
 
+终端中的 `send_end` 展示发送状态、驱动接受的字节数及已读取的发送源字节数；`request_result` 分别展示发送、排空和回复结果。协议帧另有 `direction` 与 `status`，发送完成和解析成功应分别判断：
+
+| 场景 | 判定 |
+| --- | --- |
+| `send_end` 为 `complete`，随后回复超时，退出 6 | 发送已被驱动接受，等待回复失败 |
+| TX `data` 已出现，RX `frame` 为 `error` | 数据已收发，回复解析失败；查看帧的 `errors` |
+| `request_result.reply_matched` 为 `true` | 满足所选等待条件；未配置协议时是首个 RX 数据，配置协议时是首个有效 RX 帧，使用 `--reply-hex` 时是字节串匹配 |
+
+上述等待条件只证明对应的软件观察结果。若设备要求确认命令编号或应答码，还需检查回复内容。
+
 ## 配置协议与重解析
 
 协议配置是声明式 JSON，版本为 1，可定义分帧、字段、校验和方向覆盖；不执行脚本。先验证，再用样例试解析：
@@ -102,6 +112,15 @@ CSV 包含配置、来源范围、错误和单位等解析上下文；字段列�
 内部记录队列上限 16 MiB、输出队列上限 4 MiB、最大单帧 64 KiB，SQLite 缓存上限 32 MiB；JSON 配置、单条事件细节和会话元数据分别限制为 1 MiB。记录按 100ms 或 256 KiB 批量提交，使用 WAL 与 FULL 同步；异常退出可能失去尚未提交的尾部，以 `persisted_seq` 为准。时间戳是应用观察时间，不是 UART 线上逐字节硬件时间；XON/XOFF 流控字符由驱动处理，不保证出现在应用原始记录中。无硬件背压或采集能力不足时，工具会报告故障与潜在缺口，不能保证外部持续输入永不溢出。
 
 退出码：0 成功；2 参数或配置错误；3 串口连接错误；4 I/O 或输出错误；5 部分发送；6 超时；7 记录错误；8 协议试解析存在帧错误；130 用户取消。具体失败原因写到标准错误。
+
+脚本应保存标准错误并立即读取退出码，需要事件细节时选择 JSONL；实时会话的协议帧错误还应检查 `frame.status` 和 `frame.errors`，不能仅根据进程退出码判断解析成功。例如：
+
+```sh
+build/serialspark send --profile bench --text PING --wait-reply --format jsonl >send.jsonl 2>send.stderr
+rc=$?
+cat send.stderr >&2
+echo "exit=$rc"
+```
 
 ## 当前边界
 
