@@ -87,7 +87,28 @@ void Output::emit(const Json& j) {
         if(j.contains("status"))out<<" status="<<j["status"];
         if(j.contains("fields"))out<<" fields="<<j["fields"].dump();
         if(j.contains("errors")&&!j["errors"].empty())out<<" errors="<<j["errors"].dump();
-        if(j.contains("detail")&&!j["detail"].empty())out<<" detail="<<j["detail"].dump();
+        if(j.contains("detail")&&!j["detail"].empty()) {
+            const auto& detail=j["detail"];
+            auto kind=j.value("kind",std::string{});
+            if(kind=="send_end") {
+                auto status=detail.value("status",std::string{});
+                out<<" request="<<detail.value("request",std::uint64_t{})
+                   <<" 发送状态="<<(status=="complete"?"驱动已接受":status=="partial"?"部分发送":status=="cancelled"?"已取消":"失败")
+                   <<" accepted_bytes="<<detail.value("accepted_bytes",std::uint64_t{})
+                   <<" source_bytes="<<detail.value("requested_bytes_read",std::uint64_t{})
+                   <<" source_complete="<<(detail.value("source_complete",false)?"true":"false")
+                   <<" reason="<<detail.value("reason",Json("")).dump();
+            } else if(kind=="request_result") {
+                auto state=[&](const char* key,const char* yes,const char* no,const char* unchecked) {
+                    if(!detail.contains(key)||detail.at(key).is_null())return unchecked;
+                    return detail.at(key).get<bool>()?yes:no;
+                };
+                out<<" request="<<detail.value("request",std::uint64_t{})
+                   <<" 发送="<<state("driver_accepted","驱动已接受","未完成","未检查")
+                   <<" 排空="<<state("output_queue_empty","已确认","未排空","未检查")
+                   <<" 回复="<<state("reply_matched","匹配成功","未匹配","未等待");
+            } else out<<" detail="<<detail.dump();
+        }
     } else out<<j.dump(2);
     out<<'\n';enqueue(out.str());
 }
