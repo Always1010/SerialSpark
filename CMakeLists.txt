@@ -13,7 +13,7 @@ add_library(serialspark_core src/core.cpp src/serial.cpp src/baud.cpp src/record
 target_include_directories(serialspark_core PUBLIC include)
 target_link_libraries(serialspark_core PUBLIC nlohmann_json::nlohmann_json PkgConfig::UDEV SQLite::SQLite3 Threads::Threads)
 target_compile_options(serialspark_core PRIVATE -Wall -Wextra -Wpedantic)
-add_executable(serialspark src/main.cpp src/commands.cpp)
+add_executable(serialspark src/main.cpp src/cli.cpp src/profiles.cpp src/commands.cpp)
 target_link_libraries(serialspark PRIVATE serialspark_core CLI11::CLI11)
 target_compile_options(serialspark PRIVATE -Wall -Wextra -Wpedantic)
 include(CTest)
