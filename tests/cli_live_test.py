@@ -12,6 +12,7 @@ import threading
 import time
 
 EXE = str(pathlib.Path(sys.argv[1]).resolve())
+EXAMPLES = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else pathlib.Path(__file__).resolve().parents[1] / "examples"
 
 
 def events(output):
@@ -101,7 +102,7 @@ with tempfile.TemporaryDirectory() as directory:
         assert timeout.returncode == 6, timeout.stderr
         assert any(e["kind"] == "send_end" and e["detail"]["status"] == "complete" for e in events(timeout.stdout))
         receive(master, 1)
-        duplex = pathlib.Path(__file__).resolve().parents[1] / "examples" / "lines-duplex.json"
+        duplex = EXAMPLES / "lines-duplex.json"
         duplex_log = root / "duplex.ssr"
         duplex_received = []
 

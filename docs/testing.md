@@ -18,9 +18,27 @@ ctest --test-dir build --output-on-failure -R '^protocol$'
 
 `serial_test` 和 CLI 测试通过伪终端（PTY）验证软件收发；离线测试还比较实时解析与重解析结果、过滤、CSV/BIN 导出、来源字节重建和记录不变性。PTY 不提供电气层验证。以上是仓库提供的测试范围说明，不代表某一构建在当前机器已执行通过；发布前应记录实际执行结果。
 
+## Debian 包与干净环境验收
+
+原生打包需要 `dpkg-dev`、`file`、`binutils` 和 Python 3。CPack 保留自动依赖分析，并调用 `scripts/check_deb.py` 检查产物。检查包括包名、原生架构、版本、ELF 运行库与 `Depends` 对应关系、RPATH/RUNPATH、包内协议样例及在线/离线 CLI。子进程移除 `LD_LIBRARY_PATH`、`LD_PRELOAD` 和 `LD_AUDIT`；检查只解包到临时目录，不安装到主机。已有包也可单独检查：
+
+```sh
+python3 scripts/check_deb.py build/packages/serialspark_0.1.0_arm64.deb
+```
+
+替换文件名中的架构为实际原生架构。检查失败时包不得交付；重复打包目录中的旧包不会因本次检查失败而自动删除，应确认交付文件来自成功的打包命令。
+
+使用已安装的 Docker 可在 Ubuntu 24.04 中完成独立构建和干净环境安装验收：
+
+```sh
+docker build -f docker/release.Dockerfile -t serialspark-release-check .
+```
+
+构建阶段执行 Release 构建、CTest 和带产物检查的 CPack；独立验收阶段只通过包管理器安装 `.deb` 与测试所需的 Python，运行包内版本、协议及 PTY 在线/离线检查，不继承构建阶段的开发依赖。这会下载容器镜像和容器内软件包，但不安装本机依赖。该入口的存在不代表容器验收已执行通过；Docker 不可用时，应在干净目标机器执行对应安装验收并记录结果。
+
 ## 真实设备验收清单
 
-在真实目标串口、线缆和设备上逐项记录型号、接线、配置、预期和结果：
+在真实目标串口、线缆和设备上逐项记录设备型号、转换器芯片、线缆、电平类型、接线、驱动版本、端口、全部串口参数、预期和结果：
 
 - `ports` 能发现目标节点；运行用户具有访问权限，连接失败时保存完整标准错误。
 - 双端波特率、数据位、校验位、停止位和流控匹配；验证驱动实际回读值与目标要求一致。
