@@ -7,7 +7,7 @@ SerialSpark 是面向 Linux 的串口收发、原始数据记录与离线协议�
 目标环境为 Ubuntu 24.04，使用 GCC 13、CMake 3.28。项目是 C++20；CMake 按当前主机架构生成原生构建和 Debian 包（例如 aarch64 主机对应 Debian 的 arm64 架构）。安装构建依赖：
 
 ```sh
-sudo apt install build-essential cmake pkg-config libsqlite3-dev libudev-dev nlohmann-json3-dev libcli11-dev python3
+sudo apt install build-essential cmake pkg-config libsqlite3-dev libudev-dev nlohmann-json3-dev libcli11-dev python3 dpkg-dev file binutils
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j2
 ```
@@ -21,6 +21,8 @@ cpack --config build/CPackConfig.cmake -B build/packages
 ```
 
 生成文件名为 `serialspark_0.1.0_<Debian架构>.deb`。例如 arm64 主机可安装 `sudo apt install ./build/packages/serialspark_0.1.0_arm64.deb`；其他主机选择实际生成的架构文件。包安装命令为 `serialspark`，文档与样例位于 `/usr/share/doc/serialspark/`。源码目录的构建可以直接运行，无需安装。
+
+CPack 在生成 Debian 包后自动检查架构、版本、动态库对应的 `Depends`、RPATH/RUNPATH，以及包内样例和在线/离线 CLI。缺少打包工具或依赖元数据时会报错并停止交付。解包检查使用当前主机运行库；干净环境安装验收入口见 [测试说明](docs/testing.md)。
 
 ## 快速上手
 

@@ -1,0 +1,14 @@
+.git
+.agent-local
+build
+build-*
+AGENTS.md
+SPEC.md
+HANDOFF.md
+history.local.json
+changes.local.json
+.env
+.env.*
+*.ssr
+*.ssr-wal
+*.ssr-shm
