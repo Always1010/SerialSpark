@@ -1,5 +1,7 @@
 #include "serialspark/menu.hpp"
 #include "serialspark/cli.hpp"
+#include "serialspark/commands.hpp"
+#include "serialspark/record.hpp"
 #include "serialspark/profiles.hpp"
 #include "serialspark/protocol.hpp"
 #include "serialspark/serial.hpp"
@@ -12,6 +14,8 @@
 #include <iostream>
 #include <map>
 #include <limits>
+#include <ctime>
+#include <set>
 
 namespace ss {
 namespace {
@@ -221,6 +225,88 @@ Plan live(Form& f,const std::string& mode,const Json& ports) {
     }
     return plan;
 }
+std::int64_t timestamp(const std::string& value) {
+    // Explicit offsets avoid interpreting business times using the host's timezone.
+    if(value.size()<20||value[4]!='-'||value[7]!='-'||value[10]!='T'||value[13]!=':'||value[16]!=':')
+        throw Error(Exit::usage,"时间格式为 YYYY-MM-DDTHH:MM:SS[.小数]Z 或末尾 +08:00 等时区偏移");
+    std::tm parsed{};
+    parsed.tm_year=static_cast<int>(integer(value.substr(0,4),1970,9999))-1900;
+    parsed.tm_mon=static_cast<int>(integer(value.substr(5,2),1,12))-1;
+    parsed.tm_mday=static_cast<int>(integer(value.substr(8,2),1,31));
+    parsed.tm_hour=static_cast<int>(integer(value.substr(11,2),0,23));
+    parsed.tm_min=static_cast<int>(integer(value.substr(14,2),0,59));
+    parsed.tm_sec=static_cast<int>(integer(value.substr(17,2),0,59));
+    auto original=parsed;auto seconds=timegm(&parsed);
+    if(parsed.tm_year!=original.tm_year||parsed.tm_mon!=original.tm_mon||parsed.tm_mday!=original.tm_mday)
+        throw Error(Exit::usage,"日期不存在");
+    std::size_t zone=19;std::int64_t fraction=0;
+    if(value[zone]=='.') {
+        auto end=value.find_first_of("Z+-",zone+1);
+        if(end==std::string::npos||end==zone+1||end-zone-1>9)throw Error(Exit::usage,"秒的小数部分须为 1～9 位数字，随后填写时区");
+        fraction=integer(value.substr(zone+1,end-zone-1),0,999999999);
+        for(std::size_t n=end-zone-1;n<9;++n)fraction*=10;
+        zone=end;
+    }
+    if(value.substr(zone)!="Z") {
+        if(value.size()!=zone+6||(value[zone]!='+'&&value[zone]!='-')||value[zone+3]!=':')throw Error(Exit::usage,"请填写 Z 或 +08:00 等明确时区");
+        auto offset=integer(value.substr(zone+1,2),0,23)*3600+integer(value.substr(zone+4,2),0,59)*60;
+        seconds+=value[zone]=='+'?-static_cast<std::int64_t>(offset):static_cast<std::int64_t>(offset);
+    }
+    if(seconds<0||seconds>(INT64_MAX-fraction)/1000000000)throw Error(Exit::usage,"时间超出可表示的非负 Unix 纳秒范围");
+    return seconds*1000000000+fraction;
+}
+std::string field_condition(Form& f,const std::string& protocol) {
+    auto mode=f.choose("filter.field.mode","是否按解析字段筛选",{{"none","不筛选字段"},{"guided","选择字段、比较方式和值"},{"expression","直接填写高级比较表达式"}},"none");
+    if(mode=="none")return "";
+    if(mode=="expression")return f.ask("filter.expression","字段表达式，例如 temperature > 24","",validate_field_filter);
+    auto config=read_json(protocol);std::set<std::string> names;
+    auto collect=[&](const Json& j){if(j.contains("fields"))for(const auto& field:j.at("fields"))names.insert(field.at("name").get<std::string>());};
+    collect(config);for(const auto& direction:{"tx","rx"})if(config.contains(direction))collect(config.at(direction));
+    Choices fields;for(const auto& name:names)fields.push_back({name,name});
+    std::string name;
+    if(fields.empty())name=f.ask("filter.field.name","协议未声明字段，请填写要比较的字段名");
+    else name=f.choose("filter.field.name","选择解析字段",fields,fields.front().first);
+    auto op=f.choose("filter.field.op","比较方式",{{"==","等于"},{"!=","不等于"},{">","大于"},{">=","大于等于"},{"<","小于"},{"<=","小于等于"}},"==");
+    auto prefix=Json(name).dump()+" "+op+" ";
+    auto value=f.ask("filter.field.value","比较值：JSON 数字、布尔值或带双引号的字符串；64 位整数使用精确十进制字符串","",[&](const auto& v){validate_field_filter(prefix+v);});
+    return prefix+value;
+}
+Plan logs(Form& f) {
+    Plan plan;plan.args.push_back("log");
+    auto operation=f.choose("log.operation","如何处理已有记录",{{"info","查看摘要、完整性和分段信息"},{"view","查看原始事件或解析结果"},{"parse","按协议重新解析"},{"export","导出到新文件"}},"info");
+    plan.args.push_back(operation);
+    auto path=f.ask("log.path","记录首段 .ssr 文件路径","",[](const auto& v){input_file(v);log_info(v);});
+    plan.args.push_back(path);
+    plan.notes.push_back("读取已有记录，不打开串口；原始记录保持不变。");
+    if(operation=="info")return plan;
+    std::string format="human";
+    if(operation=="export")format=f.choose("log.format","导出格式",{{"jsonl","JSONL：保留事件结构或解析结果"},{"csv","CSV：解析字段表格（需要协议）"},{"bin","BIN：单方向原始字节（不包含时间，不解析协议）"}},"jsonl");
+    std::string protocol;
+    if(format!="bin") {
+        bool required=operation=="parse"||format=="csv";
+        protocol=f.ask("log.protocol",required?"用于解析的协议 JSON 路径":"协议 JSON 路径（留空查看或导出原始事件）","",protocol_file,!required);
+        plan.optional("--protocol",protocol);
+    }
+    plan.option("--format",format);
+    auto direction=f.choose("filter.direction","数据方向",format=="bin"?Choices{{"rx","RX：收到的数据"},{"tx","TX：驱动接受的发送数据"}}:Choices{{"all","全部方向"},{"rx","RX：收到的数据"},{"tx","TX：驱动接受的发送数据"}},format=="bin"?"rx":"all");
+    plan.option("--direction",direction);
+    auto content=f.choose("filter.content","是否按原始字节内容筛选",{{"none","不筛选内容"},{"text","包含指定 UTF-8 文本"},{"hex","包含指定十六进制字节"}},"none");
+    if(content=="text")plan.option("--contains-text",f.ask("filter.text","包含的文本","",[](const auto& v){if(v.size()>65536)throw Error(Exit::usage,"内容筛选超过 64 KiB 上限");}));
+    if(content=="hex")plan.option("--contains-hex",f.ask("filter.hex","包含的十六进制字节","",[](const auto& v){hex_input(v,65536);}));
+    if(f.yes("filter.time","是否限制时间范围（包含边界）")) {
+        auto from=f.ask("filter.from","开始时间，YYYY-MM-DDTHH:MM:SS[.小数]+08:00 或 Z（可留空）","",[](const auto& v){if(!v.empty())timestamp(v);},true);
+        auto start=from.empty()?std::int64_t(0):timestamp(from);
+        auto to=f.ask("filter.to","结束时间，同样填写明确时区（可留空）","",[&](const auto& v){if(!v.empty()&&timestamp(v)<start)throw Error(Exit::usage,"结束时间不能早于开始时间");},true);
+        if(!from.empty())plan.option("--from-ns",std::to_string(start));
+        if(!to.empty())plan.option("--to-ns",std::to_string(timestamp(to)));
+    }
+    if(!protocol.empty())plan.optional("--where",field_condition(f,protocol));
+    if(operation=="export")plan.option("--output",f.ask("log.output","导出到新的文件路径","",output_file));
+    else plan.option("--display",f.choose("log.display","数据展示",{{"both","同时显示十六进制与文本"},{"hex","十六进制"},{"text","文本"}},"both"));
+    plan.notes.push_back(protocol.empty()?"内容筛选作用于单个原始事件。":"先按完整字节流组帧，再按消息、内容与字段筛选。");
+    if(format=="bin")plan.notes.push_back("BIN 仅导出所选方向的原始数据字节，不保留事件时间。");
+    return plan;
+}
 std::string quote(const std::string& text) {
     bool control=std::any_of(text.begin(),text.end(),[](unsigned char ch){return ch<32||ch==127;});
     if(control) {
@@ -286,7 +372,7 @@ int run_menu() {
         try {
             std::cout<<"\nSerialSpark — 任务菜单\n"
                      <<"1. 查看串口与连接条件（不打开设备）\n"
-                     <<"2. 发送一次数据\n3. 进入交互收发\n4. 接收数据并保存记录\n0. 退出\n"
+                     <<"2. 发送一次数据\n3. 进入交互收发\n4. 接收数据并保存记录\n5. 查看、解析或导出已有记录\n0. 退出\n"
                      <<"引导中：回车接受默认值，:back 返回上一步，:cancel 返回菜单，:clear 清空可选项。\n"
                      <<"输入以 :: 开头可发送字面量冒号命令，例如 ::cancel。\n> "<<std::flush;
             auto selected=line();if(selected=="0")return 0;
@@ -295,6 +381,7 @@ int run_menu() {
                 auto mode=selected=="2"?"send":selected=="3"?"session":"capture";
                 auto ports=discover_ports();task([&](Form& f){return live(f,mode,ports);});continue;
             }
+            if(selected=="5"){task(logs);continue;}
             std::cout<<"请选择菜单中的编号。\n";
         } catch(const Cancel&) {
             if(menu_signal){auto signal=menu_signal;if(signal==SIGTERM)return 128+SIGTERM;menu_signal=0;}
