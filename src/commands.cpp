@@ -130,6 +130,9 @@ struct ProtocolTest {
     }
 };
 }
+void validate_field_filter(const std::string& expression) {
+    Filter filter;filter.where=expression;filter.prepare(true);
+}
 void add_analysis_commands(CLI::App& app,int& result) {
     auto log=app.add_subcommand("log","只读离线查看、重解析与导出；不会打开串口或发送数据");log->require_subcommand(1);
     auto info=log->add_subcommand("info","查看设备、配置、持久化位置、完整性与分段概要");

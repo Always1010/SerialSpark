@@ -1,4 +1,5 @@
 """Verify menu cancellation, byte accuracy and terminal handoff using Linux PTYs."""
+import datetime
 import errno
 import json
 import os
@@ -169,14 +170,68 @@ with tempfile.TemporaryDirectory() as directory:
         menu.answer("是否调整高级设置", "1")
         menu.answer("请选择下一步", "1")
         menu.expect("connect")
-        os.write(master, b"CAPTURE")
-        menu.expect("43415054555245")
+        capture_payload = b"7,23.5,1\r\n8,25.5,0\r\n"
+        os.write(master, capture_payload)
+        menu.expect("372C32332E352C310D0A")
         menu.proc.send_signal(signal.SIGINT)
         menu.expect("操作结束，退出码：130")
         menu.answer("接下来", "1")
         info = subprocess.run([EXE, "log", "info", str(capture), "--format", "jsonl"], capture_output=True, timeout=3)
-        assert info.returncode == 0 and json.loads(info.stdout)["rx_data_bytes"] == 7
+        assert info.returncode == 0 and json.loads(info.stdout)["rx_data_bytes"] == len(capture_payload)
         assert json.loads(info.stdout)["complete"]
+        # Export limits are guided: BIN has one direction and no protocol prompt.
+        menu.answer("任务菜单", "5")
+        menu.answer("如何处理已有记录", "4")
+        menu.answer("记录首段", str(log))
+        menu.answer("导出格式", "3")
+        menu.answer("数据方向", "2")
+        menu.answer("是否按原始字节内容筛选", "1")
+        menu.answer("是否限制时间范围", "1")
+        menu.answer("导出到新的文件路径", str(log))
+        menu.expect("目标已存在")
+        binary = root / "tx.bin"
+        menu.answer("导出到新的文件路径", str(binary))
+        menu.answer("请选择下一步", "1")
+        menu.expect("操作结束，退出码：0")
+        assert binary.read_bytes() == expected
+        menu.answer("接下来", "1")
+
+        # CSV parsing, explicit timezone conversion and typed field validation.
+        original_record = capture.read_bytes()
+        menu.answer("任务菜单", "5")
+        menu.answer("如何处理已有记录", "4")
+        menu.answer("记录首段", str(capture))
+        menu.answer("导出格式", "2")
+        protocol = pathlib.Path(__file__).resolve().parents[1] / "examples" / "lines.json"
+        menu.answer("用于解析的协议 JSON 路径", str(protocol))
+        menu.answer("数据方向", "2")
+        menu.answer("是否按原始字节内容筛选", "1")
+        menu.answer("是否限制时间范围", "2")
+        menu.answer("开始时间，", "invalid")
+        menu.expect("输入有误")
+        epoch = datetime.datetime.fromtimestamp(0, datetime.timezone(datetime.timedelta(hours=8))).isoformat()
+        menu.answer("开始时间，", epoch)
+        menu.answer("结束时间，")
+        menu.answer("是否按解析字段筛选", "2")
+        menu.answer("选择解析字段", "3")
+        menu.answer("比较方式", "3")
+        menu.answer("比较值：", '"bad"')
+        menu.expect("输入有误")
+        menu.answer("比较值：", "24")
+        csv = root / "parsed.csv"
+        menu.answer("导出到新的文件路径", str(csv))
+        menu.answer("请选择下一步", "3")
+        preview = menu.expect("请选择下一步")
+        assert b"'--from-ns' '0'" in preview and b"'--where'" in preview
+        menu.expect("> ")
+        os.write(menu.master, b"1\n")
+        menu.expect("操作结束，退出码：0")
+        import csv as csv_module
+        with csv.open() as stream:
+            rows = list(csv_module.DictReader(stream))
+        assert len(rows) == 1 and rows[0]["field.temperature"] == "25.5"
+        assert capture.read_bytes() == original_record
+        menu.answer("接下来", "1")
         menu.answer("任务菜单", "0")
         assert menu.proc.wait(timeout=3) == 0
     finally:
