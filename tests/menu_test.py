@@ -232,6 +232,66 @@ with tempfile.TemporaryDirectory() as directory:
         assert len(rows) == 1 and rows[0]["field.temperature"] == "25.5"
         assert capture.read_bytes() == original_record
         menu.answer("接下来", "1")
+        # Profile writes/deletes require execution; names starting with '-' are positional.
+        menu.answer("任务菜单", "6")
+        menu.answer("管理常用串口配置", "3")
+        connection(menu, port)
+        menu.answer("保存后的配置名称", "../bad")
+        menu.expect("输入有误")
+        menu.answer("保存后的配置名称", "--help")
+        menu.answer("请选择下一步", "1")
+        menu.expect("操作结束，退出码：0")
+        stored = root / "config" / "serialspark" / "profiles" / "--help.json"
+        assert json.loads(stored.read_text())["config"]["baud"] == 115200
+        menu.answer("接下来", "1")
+
+        # Reuse a stored configuration with an explicit baud override.
+        menu.answer("任务菜单", "2")
+        menu.answer("如何设置连接", "2")
+        menu.answer("选择已保存的串口配置", "1")
+        menu.answer("波特率（", "9600")
+        menu.answer("是否修改", "1")
+        menu.answer("发送方式", "2")
+        menu.answer("发送十六进制", "00 FF")
+        live_tail(menu)
+        menu.answer("请选择下一步", "1")
+        assert receive(master, 2) == b"\x00\xff"
+        menu.expect("操作结束，退出码：0")
+        assert json.loads(stored.read_text())["config"]["baud"] == 115200
+        menu.answer("接下来", "1")
+
+        menu.answer("任务菜单", "6")
+        menu.answer("管理常用串口配置", "5")
+        menu.answer("选择已保存的串口配置", "1")
+        exported = root / "profile.json"
+        menu.answer("配置导出到新的", str(exported))
+        menu.answer("请选择下一步", "1")
+        menu.expect("操作结束，退出码：0")
+        assert exported.read_bytes() == stored.read_bytes()
+        menu.answer("接下来", "1")
+
+        menu.answer("任务菜单", "6")
+        menu.answer("管理常用串口配置", "6")
+        menu.answer("选择已保存的串口配置", "1")
+        menu.answer("请选择下一步", "4")
+        menu.expect("已取消")
+        assert stored.exists()
+        menu.answer("任务菜单", "6")
+        menu.answer("管理常用串口配置", "6")
+        menu.answer("选择已保存的串口配置", "1")
+        menu.answer("请选择下一步", "1")
+        menu.expect("操作结束，退出码：0")
+        assert not stored.exists()
+        menu.answer("接下来", "1")
+        menu.answer("任务菜单", "6")
+        menu.answer("管理常用串口配置", "4")
+        menu.answer("要导入的配置 JSON 路径", str(exported))
+        menu.answer("保存后的配置名称", "imported")
+        menu.answer("请选择下一步", "1")
+        menu.expect("操作结束，退出码：0")
+        imported = stored.with_name("imported.json")
+        assert json.loads(imported.read_text()) == json.loads(exported.read_text())
+        menu.answer("接下来", "1")
         menu.answer("任务菜单", "0")
         assert menu.proc.wait(timeout=3) == 0
     finally:

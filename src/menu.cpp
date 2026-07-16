@@ -150,14 +150,14 @@ Choices profiles() {
     for(const auto& name:list_named("profiles"))result.push_back({name.get<std::string>(),name.get<std::string>()});
     return result;
 }
-std::string select_profile(Form& f,const std::string& key="profile") {
+std::string select_profile(Form& f,const std::string& key="profile",bool validate=true) {
     auto choices=profiles();
     if(choices.empty())throw Error(Exit::usage,"还没有保存的串口配置；请使用手动连接或先保存配置");
-    return f.choose(key,"选择已保存的串口配置",choices,choices.front().first,[](const auto& name){profile_config(read_json(named_path("profiles",name)));});
+    return f.choose(key,"选择已保存的串口配置",choices,choices.front().first,[=](const auto& name){if(validate)profile_config(read_json(named_path("profiles",name)));});
 }
 SerialConfig communication(Form& f,Plan& plan,const Json& ports) {
     SerialConfig config;
-    auto source=f.choose("connection","如何设置连接",{{"manual","选择串口并填写参数"},{"profile","复用已保存的串口配置"}},"manual");
+    auto source=f.choose("connection","如何设置连接",{{"manual","选择串口并填写参数"},{"profile","复用已保存的串口配置"}},"manual",[](const auto& v){if(v=="profile"&&profiles().empty())throw Error(Exit::usage,"还没有保存的配置，请选择手动设置连接");});
     std::string key="manual.";
     if(source=="profile") {
         auto name=select_profile(f);
@@ -222,6 +222,36 @@ Plan live(Form& f,const std::string& mode,const Json& ports) {
             plan.option("--rotate-bytes",f.number("rotate","记录分段阈值，字节（默认 1 GiB）","1073741824",65536,std::numeric_limits<std::uint64_t>::max()));
             plan.option("--quota-bytes",f.number("quota","记录磁盘配额，字节；0 表示不限，达到配额时停止采集","0",0,std::numeric_limits<std::uint64_t>::max()));
         }
+    }
+    return plan;
+}
+std::string profile_name(Form& f) {
+    return f.ask("profile.name","保存后的配置名称（只保存串口通信参数）","",[](const auto& v){named_path("profiles",v);});
+}
+void replacement(Form& f,Plan& plan,const std::string& name) {
+    if(std::filesystem::exists(named_path("profiles",name))) {
+        if(!f.yes("profile.replace","同名配置已存在，是否覆盖"))throw Cancel{};
+        plan.flag("--replace",true);
+    }
+}
+Plan profile_task(Form& f) {
+    Plan plan;plan.args.push_back("profile");
+    auto operation=f.choose("profile.operation","管理常用串口配置",{{"list","列出保存的配置"},{"show","查看配置内容"},{"save","保存一组串口参数"},{"import","导入配置 JSON"},{"export","导出配置 JSON"},{"delete","删除保存的配置"}},"list");
+    plan.args.push_back(operation);
+    plan.notes.push_back("配置管理不打开设备；保存内容只包含串口参数。");
+    if(operation=="list")return plan;
+    if(operation=="save") {
+        communication(f,plan,discover_ports());auto name=profile_name(f);replacement(f,plan,name);
+        plan.args.push_back("--");plan.args.push_back(name);
+    } else if(operation=="import") {
+        auto path=f.ask("profile.input","要导入的配置 JSON 路径","",[](const auto& v){input_file(v);profile_config(read_json(v));});
+        auto name=profile_name(f);replacement(f,plan,name);
+        plan.args.push_back("--");plan.args.push_back(name);plan.args.push_back(std::filesystem::absolute(path).string());
+    } else {
+        auto name=select_profile(f,"profile.selected",false);
+        plan.args.push_back("--");plan.args.push_back(name);
+        if(operation=="export")plan.args.push_back(std::filesystem::absolute(f.ask("profile.output","配置导出到新的 JSON 文件路径","",output_file)).string());
+        if(operation=="delete")plan.notes.push_back("执行后删除保存的配置："+name+"；不会删除记录或设备数据。");
     }
     return plan;
 }
@@ -372,7 +402,7 @@ int run_menu() {
         try {
             std::cout<<"\nSerialSpark — 任务菜单\n"
                      <<"1. 查看串口与连接条件（不打开设备）\n"
-                     <<"2. 发送一次数据\n3. 进入交互收发\n4. 接收数据并保存记录\n5. 查看、解析或导出已有记录\n0. 退出\n"
+                     <<"2. 发送一次数据\n3. 进入交互收发\n4. 接收数据并保存记录\n5. 查看、解析或导出已有记录\n6. 管理常用串口配置\n0. 退出\n"
                      <<"引导中：回车接受默认值，:back 返回上一步，:cancel 返回菜单，:clear 清空可选项。\n"
                      <<"输入以 :: 开头可发送字面量冒号命令，例如 ::cancel。\n> "<<std::flush;
             auto selected=line();if(selected=="0")return 0;
@@ -382,6 +412,7 @@ int run_menu() {
                 auto ports=discover_ports();task([&](Form& f){return live(f,mode,ports);});continue;
             }
             if(selected=="5"){task(logs);continue;}
+            if(selected=="6"){task(profile_task);continue;}
             std::cout<<"请选择菜单中的编号。\n";
         } catch(const Cancel&) {
             if(menu_signal){auto signal=menu_signal;if(signal==SIGTERM)return 128+SIGTERM;menu_signal=0;}
