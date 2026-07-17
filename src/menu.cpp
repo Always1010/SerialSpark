@@ -325,7 +325,7 @@ Plan logs(Form& f) {
     auto operation=f.choose("log.operation","如何处理已有记录",{{"info","查看摘要、完整性和分段信息"},{"view","查看原始事件或解析结果"},{"parse","按协议重新解析"},{"export","导出到新文件"}},"info");
     plan.args.push_back(operation);
     auto path=f.ask("log.path","记录首段 .ssr 文件路径","",[](const auto& v){input_file(v);log_info(v);});
-    plan.args.push_back(path);
+    plan.args.push_back(std::filesystem::absolute(path).string());
     plan.notes.push_back("读取已有记录，不打开串口；原始记录保持不变。");
     if(operation=="info")return plan;
     std::string format="human";
