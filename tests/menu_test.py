@@ -17,10 +17,10 @@ EXE = str(pathlib.Path(sys.argv[1]).resolve())
 
 
 class Menu:
-    def __init__(self, env):
+    def __init__(self, env, cwd=None):
         self.master, slave = pty.openpty()
         self.proc = subprocess.Popen([EXE, "menu"], stdin=slave, stdout=slave,
-                                     stderr=slave, env=env, close_fds=True)
+                                     stderr=slave, env=env, cwd=cwd, close_fds=True)
         os.close(slave)
         self.buffer = b""
         self.transcript = b""
@@ -29,7 +29,7 @@ class Menu:
         target = text.encode()
         deadline = time.monotonic() + 5
         while target not in self.buffer:
-            assert time.monotonic() < deadline, (text, self.transcript.decode(errors="replace"))
+            assert time.monotonic() < deadline, (text, self.transcript[-4000:].decode(errors="replace"))
             if select.select([self.master], [], [], 0.05)[0]:
                 try:
                     chunk = os.read(self.master, 65536)
@@ -37,7 +37,7 @@ class Menu:
                     if error.errno != errno.EIO:
                         raise
                     chunk = b""
-                assert chunk, (self.proc.poll(), text, self.transcript.decode(errors="replace"))
+                assert chunk, (self.proc.poll(), text, self.transcript[-4000:].decode(errors="replace"))
                 self.buffer += chunk
                 self.transcript += chunk
         before, self.buffer = self.buffer.split(target, 1)
@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory() as directory:
     master, slave = pty.openpty()
     port = os.ttyname(slave)
     os.close(slave)
-    menu = Menu(env)
+    menu = Menu(env, root)
     try:
         # Cancellation before execution must not connect, send or create a record.
         menu.answer("任务菜单", "2")
@@ -314,6 +314,15 @@ with tempfile.TemporaryDirectory() as directory:
         menu.answer("请选择下一步", "1")
         menu.expect("操作结束，退出码：0")
         assert json.loads(copied.read_text()) == json.loads(protocol.read_text())
+        menu.answer("接下来", "1")
+        # Relative filenames beginning with '-' must remain file operands.
+        unusual_record = root / "-capture.ssr"
+        unusual_record.write_bytes(original_record)
+        menu.answer("任务菜单", "5")
+        menu.answer("如何处理已有记录", "1")
+        menu.answer("记录首段", unusual_record.name)
+        menu.answer("请选择下一步", "1")
+        menu.expect("操作结束，退出码：0")
         menu.answer("接下来", "1")
         menu.answer("任务菜单", "0")
         assert menu.proc.wait(timeout=3) == 0
