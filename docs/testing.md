@@ -2,7 +2,7 @@
 
 ## 自动化测试
 
-CMake 默认启用 CTest，测试覆盖核心配置与字节处理、PTY 串口行为、SQLite 记录轮转/配额、协议组帧与字段解析，以及在线/离线 CLI 工作流。配置并构建后可运行：
+CMake 默认启用 CTest，测试覆盖核心配置与字节处理、PTY 串口行为、SQLite 记录轮转/配额、协议组帧与字段解析，以及在线/离线 CLI 工作流。菜单测试使用独立终端 PTY 和串口 PTY，覆盖取消时不产生副作用、返回修改、发送字节准确性、会话输入交接、采集中断收尾、离线导出和配置管理。配置并构建后可运行：
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -14,6 +14,12 @@ ctest --test-dir build --output-on-failure
 
 ```sh
 ctest --test-dir build --output-on-failure -R '^protocol$'
+```
+
+菜单与 CLI 改动可运行相关检查：
+
+```sh
+ctest --test-dir build --output-on-failure -R '^(menu|cli_live|cli_offline)$'
 ```
 
 `serial_test` 和 CLI 测试通过伪终端（PTY）验证软件收发；离线测试还比较实时解析与重解析结果、过滤、CSV/BIN 导出、来源字节重建和记录不变性。PTY 不提供电气层验证。以上是仓库提供的测试范围说明，不代表某一构建在当前机器已执行通过；发布前应记录实际执行结果。

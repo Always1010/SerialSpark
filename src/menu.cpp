@@ -255,6 +255,25 @@ Plan profile_task(Form& f) {
     }
     return plan;
 }
+Plan protocol_task(Form& f) {
+    Plan plan;plan.args.push_back("protocol");
+    auto operation=f.choose("protocol.operation","处理已有协议配置",{{"validate","验证协议配置"},{"test","用十六进制或文件试解析"},{"import","导入协议文件（验证并复制）"},{"export","导出协议文件（验证并复制）"}},"validate");
+    plan.args.push_back(operation);
+    auto source=f.ask("protocol.source","协议 JSON 路径","",protocol_file);
+    plan.notes.push_back("协议配置验证和试解析离线执行，不打开串口。");
+    if(operation=="test") {
+        auto input=f.choose("protocol.input","试解析的数据来源",{{"hex","十六进制字节"},{"file","文件原始字节"}},"hex");
+        if(input=="hex")plan.option("--hex",f.ask("protocol.hex","用于试解析的十六进制字节","",[](const auto& v){hex_input(v,65536);}));
+        else {
+            plan.option("--file",f.ask("protocol.file","用于试解析的文件路径","",input_file));
+            plan.notes.push_back("文件不含采集时间，试解析不模拟帧间超时。");
+        }
+        plan.option("--direction",f.choose("protocol.direction","试解析方向",{{"rx","RX：接收数据"},{"tx","TX：发送数据"}},"rx"));
+    }
+    plan.args.push_back("--");plan.args.push_back(std::filesystem::absolute(source).string());
+    if(operation=="import"||operation=="export")plan.args.push_back(std::filesystem::absolute(f.ask("protocol.target","保存协议到新的 JSON 文件路径","",output_file)).string());
+    return plan;
+}
 std::int64_t timestamp(const std::string& value) {
     // Explicit offsets avoid interpreting business times using the host's timezone.
     if(value.size()<20||value[4]!='-'||value[7]!='-'||value[10]!='T'||value[13]!=':'||value[16]!=':')
@@ -402,7 +421,7 @@ int run_menu() {
         try {
             std::cout<<"\nSerialSpark — 任务菜单\n"
                      <<"1. 查看串口与连接条件（不打开设备）\n"
-                     <<"2. 发送一次数据\n3. 进入交互收发\n4. 接收数据并保存记录\n5. 查看、解析或导出已有记录\n6. 管理常用串口配置\n0. 退出\n"
+                     <<"2. 发送一次数据\n3. 进入交互收发\n4. 接收数据并保存记录\n5. 查看、解析或导出已有记录\n6. 管理常用串口配置\n7. 验证、试解析或分享协议配置\n0. 退出\n"
                      <<"引导中：回车接受默认值，:back 返回上一步，:cancel 返回菜单，:clear 清空可选项。\n"
                      <<"输入以 :: 开头可发送字面量冒号命令，例如 ::cancel。\n> "<<std::flush;
             auto selected=line();if(selected=="0")return 0;
@@ -413,6 +432,7 @@ int run_menu() {
             }
             if(selected=="5"){task(logs);continue;}
             if(selected=="6"){task(profile_task);continue;}
+            if(selected=="7"){task(protocol_task);continue;}
             std::cout<<"请选择菜单中的编号。\n";
         } catch(const Cancel&) {
             if(menu_signal){auto signal=menu_signal;if(signal==SIGTERM)return 128+SIGTERM;menu_signal=0;}
