@@ -1,4 +1,4 @@
-"""Verify menu cancellation, byte accuracy and terminal handoff using Linux PTYs."""
+"""Verify guided terminal workflows and their side effects using Linux PTYs."""
 import datetime
 import errno
 import json
@@ -291,6 +291,29 @@ with tempfile.TemporaryDirectory() as directory:
         menu.expect("操作结束，退出码：0")
         imported = stored.with_name("imported.json")
         assert json.loads(imported.read_text()) == json.loads(exported.read_text())
+        menu.answer("接下来", "1")
+        # Protocol operations remain offline and share the existing parser.
+        menu.answer("任务菜单", "7")
+        menu.answer("处理已有协议配置", "2")
+        menu.answer("协议 JSON 路径", str(protocol))
+        menu.answer("试解析的数据来源", "1")
+        menu.answer("用于试解析的十六进制字节", capture_payload.hex())
+        menu.answer("试解析方向", "1")
+        menu.answer("请选择下一步", "1")
+        frames = menu.expect("操作结束，退出码：0")
+        assert b"temperature" in frames and b"23.5" in frames and b"25.5" in frames
+        menu.answer("接下来", "1")
+
+        menu.answer("任务菜单", "7")
+        menu.answer("处理已有协议配置", "4")
+        menu.answer("协议 JSON 路径", str(protocol))
+        menu.answer("保存协议到新的", str(exported))
+        menu.expect("目标已存在")
+        copied = root / "protocol.json"
+        menu.answer("保存协议到新的", str(copied))
+        menu.answer("请选择下一步", "1")
+        menu.expect("操作结束，退出码：0")
+        assert json.loads(copied.read_text()) == json.loads(protocol.read_text())
         menu.answer("接下来", "1")
         menu.answer("任务菜单", "0")
         assert menu.proc.wait(timeout=3) == 0
