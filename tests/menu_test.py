@@ -315,6 +315,22 @@ with tempfile.TemporaryDirectory() as directory:
         menu.expect("操作结束，退出码：0")
         assert json.loads(copied.read_text()) == json.loads(protocol.read_text())
         menu.answer("接下来", "1")
+        # Empty text is valid with a newline; zero-byte sends are rejected in the form.
+        menu.answer("任务菜单", "2")
+        menu.answer("如何设置连接", "2")
+        menu.answer("选择已保存的串口配置", "1")
+        menu.answer("波特率（")
+        menu.answer("是否修改", "1")
+        menu.answer("发送方式", "1")
+        menu.answer("发送文本")
+        menu.answer("文本末尾追加的换行", "1")
+        menu.expect("发送内容为空")
+        menu.answer("文本末尾追加的换行", "4")
+        live_tail(menu)
+        menu.answer("请选择下一步", "1")
+        assert receive(master, 2) == b"\r\n"
+        menu.expect("操作结束，退出码：0")
+        menu.answer("接下来", "1")
         # Relative filenames beginning with '-' must remain file operands.
         unusual_record = root / "-capture.ssr"
         unusual_record.write_bytes(original_record)
