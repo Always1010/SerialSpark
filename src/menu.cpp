@@ -195,11 +195,15 @@ Plan live(Form& f,const std::string& mode,const Json& ports) {
     if(mode=="send") {
         auto type=f.choose("source","发送方式",{{"text","文本（不解释反斜杠转义）"},{"hex","十六进制字节"},{"file","文件原始字节"}},"text");
         if(type=="text") {
-            plan.option("--text",f.ask("text","发送文本"));
+            auto text=f.ask("text","发送文本（可留空，仅发送所选换行）","",{},true);
+            plan.option("--text",text);
+            auto ending=f.choose("newline","文本末尾追加的换行",{{"none","不追加"},{"lf","LF"},{"cr","CR"},{"crlf","CRLF"}},"none",[&](const auto& value){
+                if(text.empty()&&value=="none")throw Error(Exit::usage,"发送内容为空，请选择换行或返回填写文本");
+            });
+            plan.option("--newline",ending);
         } else if(type=="hex") {
             plan.option("--hex",f.ask("hex","发送十六进制，例如 01 02 FF","",[](const auto& v){hex_input(v,1024*1024);}));
         } else plan.option("--file",f.ask("file","发送文件路径","",input_file));
-        if(type=="text")plan.option("--newline",f.choose("newline","文本末尾追加的换行",{{"none","不追加"},{"lf","LF"},{"cr","CR"},{"crlf","CRLF"}},"none"));
     } else if(mode=="session") {
         plan.option("--newline",f.choose("newline","每次发送文本末尾追加的换行",{{"none","不追加"},{"lf","LF"},{"cr","CR"},{"crlf","CRLF"}},"none"));
         plan.notes.push_back("进入会话后普通行发送文本；:send hex/file 发送其他内容，:quit 返回菜单。");
